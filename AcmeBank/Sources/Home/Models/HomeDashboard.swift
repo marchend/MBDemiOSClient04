@@ -205,3 +205,23 @@ public struct Transaction: Equatable, Codable {
         self.merchantName = merchantName
     }
 }
+
+// MARK: - Derived currency
+
+public extension HomeDashboard {
+    /// Resolve the currency a transaction's amount should render in.
+    ///
+    /// The BFF sends no per-transaction currency, so a transaction
+    /// inherits the currency of its **owning account** (matched by
+    /// `accountId`). Falls back to the first account's currency when the
+    /// owning account isn't in the returned set, and finally to `"USD"`
+    /// only when there are no accounts at all — in which case there are no
+    /// transactions to render either. Keeps the Recent Transactions list
+    /// in the same currency as the Accounts list, so a CAD dataset no
+    /// longer renders transaction amounts as `US$`.
+    func displayCurrency(for transaction: Transaction) -> String {
+        accounts.first(where: { $0.id == transaction.accountId })?.currencyCode
+            ?? accounts.first?.currencyCode
+            ?? "USD"
+    }
+}
