@@ -3,24 +3,100 @@ options:
   bundleIdPrefix: com.acmebank
   deploymentTarget:
     iOS: "17.0"
+packages:
+  # Pin okta-mobile-swift to the 2.x major (bootstrap spec). `from:`
+  # is the version-requirement form xcodegen accepts — bare
+  # `minVersion` errors with "Unknown package requirement" before any
+  # compile reaches xcodebuild. Resolved version is captured in
+  # Package.resolved on first SPM resolve.
+  OktaClient:
+    url: https://github.com/okta/okta-mobile-swift
+    from: 2.0.0
 targets:
   AcmeBank:
     type: application
     platform: iOS
     sources:
+      # Broad glob picks up App/, Features/, DesignSystem/, Resources/,
+      # AcmeBank.entitlements, PrivacyInfo.xcprivacy, AND the new
+      # Sources/Auth + Sources/Landing trees added in this and
+      # subsequent story PRs. Sources/Landing/ ships in a later PR
+      # but is covered automatically by this directory glob — no
+      # second project.yml edit needed when those files arrive.
       - path: AcmeBank
+        excludes:
+          # Info.plist is referenced via INFOPLIST_FILE, not as a
+          # resource — exclude so it isn't double-bundled.
+          - Info.plist
+    dependencies:
+      - package: OktaClient
+        product: OktaDirectAuth
+    postBuildScripts:
+      # Build-time bridge: reads the four OKTA_* env vars from the
+      # calling process and writes them (or `__OKTA_<KEY>_UNSET__`
+      # sentinels when unset) into the BUILT Info.plist via
+      # `plutil -replace`. Why postBuild: at this point Xcode has
+      # already processed the source Info.plist into
+      # ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, so the script mutates
+      # the file that actually ships with the .app.
+      #
+      # Sandbox interaction: this phase writes a file OUTSIDE its
+      # default sandbox (the built Info.plist under TARGET_BUILD_DIR).
+      # We CANNOT narrow the grant by declaring the built Info.plist
+      # as `outputFiles` — Xcode's built-in ProcessInfoPlistFile task
+      # already declares that exact path as its own output, and two
+      # build commands declaring the same output is a hard
+      # "Multiple commands produce …" error that fails project
+      # validation before any source compiles. Instead we (a) declare
+      # a private stamp file under $(DERIVED_FILE_DIR) so Xcode has a
+      # real, unique output to track for this phase, and (b) disable
+      # user-script sandboxing on this target (settings.base below)
+      # so the script is permitted to write the built Info.plist.
+      # `alwaysOutOfDate: true` (XcodeGen 2.37+) marks the phase as
+      # always-dirty so Xcode runs it every build — necessary because
+      # env vars can change between builds without any input file
+      # changing, and a previous build's sentinel write would
+      # otherwise stick around.
+      #
+      # We invoke the script via `bash "$SRCROOT/Scripts/…"` rather
+      # than `path:` so the executable bit on the script file is
+      # irrelevant — `bash <file>` runs the contents regardless of
+      # mode bits, which is friendlier across a checkout that didn't
+      # preserve +x (e.g. zip downloads of the repo).
+      - name: "Inject Okta config into Info.plist"
+        script: |
+          bash "$SRCROOT/Scripts/inject_okta_config.sh"
+        inputFiles: []
+        outputFiles:
+          # Private stamp file — NOT the built Info.plist (see comment
+          # above re: ProcessInfoPlistFile collision). The script
+          # `touch`es this at the end so the declared output exists.
+          - $(DERIVED_FILE_DIR)/inject_okta_config.stamp
+        alwaysOutOfDate: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.acmebank.mobile
         SWIFT_VERSION: "5.10"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: AcmeBank
+        # Custom Info.plist with the four OKTA_* keys plus the
+        # standard launch-screen / scene-manifest entries.
+        # GENERATE_INFOPLIST_FILE only injects the Apple-defined
+        # `INFOPLIST_KEY_*` set; arbitrary keys (OKTA_*) require a
+        # real source plist + INFOPLIST_FILE.
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AcmeBank/Info.plist
+        # The Run Script phase above writes to the built Info.plist
+        # at ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, which lives
+        # OUTSIDE the script's default sandbox. The narrower fix
+        # (declaring the built Info.plist as `outputFiles`) is not
+        # available to us here because ProcessInfoPlistFile already
+        # claims that exact path as its output, and Xcode rejects
+        # duplicate outputs with "Multiple commands produce …".
+        # Disabling user-script sandboxing target-wide is the only
+        # remaining mechanism Xcode offers to grant the write.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_ENTITLEMENTS: AcmeBank/AcmeBank.entitlements
-        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   AcmeBankTests:
     type: bundle.unit-test
@@ -35,7 +111,21 @@ targets:
   AcmeBankUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [AcmeBankUITests]
+    sources:
+      # Broad directory glob picks up every .swift file under
+      # AcmeBankUITests/ automatically. When SignInFlowUITests.swift
+      # lands in a later PR of this story it will be wired in by
+      # this same glob with no project.yml edit required.
+      #
+      # Do NOT pre-register a not-yet-existent file with an explicit
+      # `- path: AcmeBankUITests/SignInFlowUITests.swift` + `optional: true`
+      # entry: XcodeGen's `optional: true` only suppresses the
+      # generation-time "file missing" error — the explicit path is
+      # still written into the generated .xcodeproj as a build input,
+      # and xcodebuild then fails at compile time with
+      # "Build input file cannot be found" because the .swift file
+      # is absent on disk.
+      - path: AcmeBankUITests
     dependencies:
       - target: AcmeBank
     settings:
@@ -48,7 +138,9 @@ schemes:
       targets:
         AcmeBank: all
     test:
+      # `test.targets` entries use the bare `- name:` form — the
+      # `- target:` form is rejected by xcodegen's scheme schema.
       targets:
-        - AcmeBankTests
-        - AcmeBankUITests
+        - name: AcmeBankTests
+        - name: AcmeBankUITests
       parallelizable: false
