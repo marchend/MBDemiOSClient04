@@ -3,9 +3,10 @@ import XCTest
 
 /// Unit tests verifying that the `Customer.segment` field decodes
 /// correctly under all three JSON representations:
-///   1. `"segment": "PREMIER"` — field present with a string value.
+///   1. `"segment": "PREMIER"` — field present with a known string value.
 ///   2. `"segment"` key entirely omitted — optional field defaults to `nil`.
 ///   3. `"segment": null` — explicit JSON null maps to Swift `nil`.
+///   4. `"segment": "FUTURE_TIER"` — unknown value falls back to `.unknown`.
 ///
 /// Uses the same `.convertFromSnakeCase` + `.iso8601` decoder that
 /// `BFFHomeRepository` uses in production, exercised via the full
@@ -38,8 +39,8 @@ final class CustomerDecodingTests: XCTestCase {
 
     // MARK: - Test cases
 
-    /// Field present with a non-null string value — `segment` must equal
-    /// the decoded string.
+    /// Field present with a known string value — `segment` must decode
+    /// to the matching `CustomerSegment` case.
     func test_segment_decodesStringValue() throws {
         let json = dashboardJSON(customerFragment: """
         {
@@ -53,8 +54,8 @@ final class CustomerDecodingTests: XCTestCase {
 
         let home = try makeDecoder().decode(HomeDashboard.self, from: json)
 
-        XCTAssertEqual(home.customer.segment, "PREMIER",
-                       "segment must equal the decoded JSON string")
+        XCTAssertEqual(home.customer.segment, .premier,
+                       "segment must decode to .premier for JSON value \"PREMIER\"")
     }
 
     /// Key entirely absent from JSON — optional `segment` must be `nil`
@@ -94,6 +95,25 @@ final class CustomerDecodingTests: XCTestCase {
                      "segment must be nil when the JSON value is null")
     }
 
+    /// Unknown future tier string — must decode to `.unknown` rather than
+    /// failing the whole decode, preserving forward-compatibility.
+    func test_segment_fallsBackToUnknownForUnrecognisedValue() throws {
+        let json = dashboardJSON(customerFragment: """
+        {
+          "id": "cust-005",
+          "first_name": "Margaret",
+          "last_name": "Hamilton",
+          "email": "margaret@acmebank.com",
+          "segment": "PLATINUM_ELITE"
+        }
+        """)
+
+        let home = try makeDecoder().decode(HomeDashboard.self, from: json)
+
+        XCTAssertEqual(home.customer.segment, .unknown,
+                       "Unrecognised segment values must fall back to .unknown rather than failing")
+    }
+
     // MARK: - Existing nullable fields unchanged
 
     /// Regression: the addition of `segment` must not break decoding of
@@ -114,7 +134,7 @@ final class CustomerDecodingTests: XCTestCase {
         let customer = home.customer
 
         XCTAssertEqual(customer.phoneNumber, "+1-416-555-0300")
-        XCTAssertEqual(customer.segment, "STANDARD")
+        XCTAssertEqual(customer.segment, .standard)
         XCTAssertEqual(customer.displayName, "Alan Turing")
     }
 }

@@ -23,6 +23,7 @@ struct SegmentBadgeView: View {
             .padding(.vertical, 3)
             .background(Color.white.opacity(0.15))
             .clipShape(Capsule())
+            .accessibilityLabel("Customer segment: \(segment.uppercased())")
     }
 }
 

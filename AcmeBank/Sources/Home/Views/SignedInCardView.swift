@@ -21,14 +21,15 @@ struct SignedInCardView: View {
 
     let displayName: String
     let customerId: String
-    /// Optional customer segment label (e.g. `"PREMIER"`).
-    /// When non-nil a `SegmentBadgeView` is rendered to the right of
-    /// the display name. When nil the name row layout is unchanged.
-    let segment: String?
+    /// Optional customer segment. When non-nil and a known tier,
+    /// a `SegmentBadgeView` is rendered to the right of the display name.
+    /// `.unknown` segments are treated as absent so unvetted future
+    /// values never produce a blank or nonsensical badge.
+    let segment: CustomerSegment?
 
     // MARK: - Init
 
-    init(displayName: String, customerId: String, segment: String? = nil) {
+    init(displayName: String, customerId: String, segment: CustomerSegment? = nil) {
         self.displayName = displayName
         self.customerId = customerId
         self.segment = segment
@@ -58,8 +59,8 @@ struct SignedInCardView: View {
                             .bold()
                             .foregroundColor(.white)
                         Spacer()
-                        if let seg = segment {
-                            SegmentBadgeView(segment: seg)
+                        if let badgeText = segment?.badgeText {
+                            SegmentBadgeView(segment: badgeText)
                         }
                     }
                 }
@@ -121,7 +122,7 @@ struct SignedInCardView: View {
     SignedInCardView(
         displayName: "Ada Lovelace",
         customerId: "user-123",
-        segment: "PREMIER"
+        segment: .premier
     )
     .padding()
     .background(Color(.systemGroupedBackground))

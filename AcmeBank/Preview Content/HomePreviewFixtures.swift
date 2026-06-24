@@ -23,7 +23,7 @@ enum HomePreviewFixtures {
             lastName: "Lovelace",
             email: "ada.lovelace@acmebank.com",
             phoneNumber: "+1-416-555-0101",
-            segment: "PREMIER"
+            segment: .premier
         )
         return HomeDashboard(
             customer: customer,
