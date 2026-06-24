@@ -104,9 +104,9 @@ public final class OktaDirectAuthClient: OktaAuthenticating {
             throw AuthError.notConfigured(reason)
         case let .configured(issuer, clientId, _, scopes):
             return DirectAuthenticationFlow(
-                issuer: issuer,
+                issuerURL: issuer,
                 clientId: clientId,
-                scopes: scopes.joined(separator: " ")
+                scope: scopes.joined(separator: " ")
             )
         }
     }
