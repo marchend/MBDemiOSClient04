@@ -2,14 +2,19 @@ import SwiftUI
 
 /// Home/Dashboard screen shown after a successful sign-in.
 ///
-/// Responsibilities:
-/// - Owns a `HomeViewModel` (created via `@StateObject` from the
-///   injected `session` and `onSignOut` closure).
-/// - Calls `viewModel.load()` on first appear via `.task`.
-/// - Renders four view states: idle, loading, loaded, error.
-/// - Exposes a Log-Out button in the navigation bar that calls
-///   `viewModel.signOut()`, which clears the Keychain and fires
-///   `onSignOut` so `AcmeBankApp` can nil-out the session.
+/// Layout (top to bottom, no `NavigationStack`):
+///   1. `BrandBarView` — pinned at the top, always visible.
+///   2. `ScrollView` — greeting header + signed-in card + accounts
+///      section + transactions section, expanding to fill available
+///      space.
+///   3. Log Out button strip — pinned outside the scroll region at the
+///      bottom so it is always reachable without scrolling.
+///
+/// State machine driven by `HomeViewModel.state`:
+///   - `.idle`    → transparent placeholder (before `.task` fires)
+///   - `.loading` → centred `ProgressView`
+///   - `.loaded`  → the full scrollable dashboard
+///   - `.error`   → error message + "Retry" button
 ///
 /// Accessibility identifiers are stable across layout/copy changes so
 /// that UI tests can locate elements without chasing visual updates.
@@ -37,15 +42,16 @@ struct HomeView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            BrandBarView()
+
             Group {
                 switch viewModel.state {
                 case .idle:
                     Color.clear
 
                 case .loading:
-                    ProgressView("Loading…")
-                        .accessibilityIdentifier("home.loading")
+                    loadingContent
 
                 case .loaded(let dashboard):
                     dashboardContent(dashboard)
@@ -54,126 +60,189 @@ struct HomeView: View {
                     errorContent(error)
                 }
             }
-            .navigationTitle("Home")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Log Out") {
-                        viewModel.signOut()
-                    }
-                    .accessibilityIdentifier("home.logOut")
-                }
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            logOutStrip
         }
         .task {
             await viewModel.load()
         }
     }
 
-    // MARK: - Sub-views
+    // MARK: - Loading content
+
+    private var loadingContent: some View {
+        ProgressView("Loading\u{2026}")
+            .accessibilityIdentifier("home.loading")
+    }
+
+    // MARK: - Dashboard content
 
     @ViewBuilder
     private func dashboardContent(_ dashboard: HomeDashboard) -> some View {
-        List {
-            Section("Welcome") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Welcome, \(dashboard.customer.displayName)")
-                        .font(.headline)
-                        .accessibilityIdentifier("home.welcome")
-                    Text(dashboard.customer.email)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+
+                // Greeting header
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Good day,")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("home.email")
+                        .foregroundColor(.secondary)
+                    Text(dashboard.customer.displayName)
+                        .font(.title2)
+                        .bold()
+                        .foregroundColor(.primary)
+                        .accessibilityIdentifier("home.welcome")
                 }
-                .padding(.vertical, 4)
-            }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
 
-            Section("Accounts") {
-                ForEach(dashboard.accounts, id: \.id) { account in
-                    AccountRow(account: account)
-                }
-            }
+                // Signed-in identity card
+                SignedInCardView(
+                    displayName: dashboard.customer.displayName,
+                    customerId: dashboard.customer.id
+                )
+                .padding(.horizontal, 20)
 
-            Section("Recent Transactions") {
-                ForEach(dashboard.recentTransactions, id: \.id) { transaction in
-                    TransactionRow(transaction: transaction)
+                // Accounts section
+                sectionCard(header: "Accounts") {
+                    ForEach(dashboard.accounts, id: \.id) { account in
+                        AccountRowView(account: account)
+                        if account.id != dashboard.accounts.last?.id {
+                            Divider()
+                                .padding(.leading, 58)
+                        }
+                    }
                 }
+                .padding(.horizontal, 20)
+
+                // Recent Transactions section
+                sectionCard(header: "Recent Transactions") {
+                    if dashboard.recentTransactions.isEmpty {
+                        Text("No recent transactions")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(dashboard.recentTransactions, id: \.id) { tx in
+                            TransactionRowView(transaction: tx)
+                            if tx.id != dashboard.recentTransactions.last?.id {
+                                Divider()
+                                    .padding(.leading, 54)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+
+                // Bottom padding clears the pinned Log Out strip.
+                Color.clear.frame(height: 16)
             }
         }
         .accessibilityIdentifier("home.dashboard")
     }
 
+    // MARK: - Section card container
+
+    @ViewBuilder
+    private func sectionCard<Content: View>(
+        header: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(header)
+                .font(.footnote)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.8)
+                .padding(.bottom, 10)
+
+            VStack(alignment: .leading, spacing: 0) {
+                content()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+            )
+        }
+    }
+
+    // MARK: - Error content
+
     @ViewBuilder
     private func errorContent(_ error: HomeError) -> some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundStyle(.red)
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
 
             Text("Something went wrong")
                 .font(.headline)
+                .foregroundColor(.primary)
 
-            Button("Try Again") {
+            Text(errorMessage(for: error))
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+
+            Button {
                 Task { await viewModel.load() }
+            } label: {
+                Text("Retry")
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 10)
+                    .background(Color.acmeBrandNavy)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            .buttonStyle(.bordered)
             .accessibilityIdentifier("home.retry")
         }
+        .padding()
         .accessibilityIdentifier("home.error")
     }
-}
 
-// MARK: - Supporting row views
-
-private struct AccountRow: View {
-    let account: Account
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(account.accountType.displayName)
-                    .font(.body)
-                Text(account.accountNumber)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(account.balance, format: .currency(code: account.currency))
-                .font(.body.monospacedDigit())
-                .foregroundStyle(account.balance < 0 ? .red : .primary)
+    private func errorMessage(for error: HomeError) -> String {
+        switch error {
+        case .unauthorized:
+            // NOTE: This branch is intentionally unreachable in normal operation.
+            // `HomeViewModel.load()` handles `.unauthorized` by calling
+            // `clearKeychainAndSignOut()` which fires `onSignOut` and routes away
+            // before SwiftUI ever renders the error view. The case is kept here
+            // to keep the `switch` exhaustive — if the routing behaviour changes
+            // in the future, this string will be shown rather than silently falling
+            // through to a generic message.
+            return "Your session has expired. Please sign in again."
+        case .networkFailure:
+            return "Couldn\u{2019}t reach Acme Bank. Please check your connection and try again."
         }
     }
-}
 
-private struct TransactionRow: View {
-    let transaction: Transaction
+    // MARK: - Log Out strip
 
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(transaction.description)
+    /// A white strip containing the Log Out button, pinned outside the
+    /// `ScrollView` so it remains reachable regardless of scroll
+    /// position. A `Divider` above provides visual separation.
+    private var logOutStrip: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Button {
+                viewModel.signOut()
+            } label: {
+                Text("Log out")
                     .font(.body)
-                Text(transaction.date, style: .date)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .fontWeight(.medium)
+                    .foregroundColor(.acmeBrandNavy)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
             }
-            Spacer()
-            Text(transaction.amount, format: .currency(code: transaction.currency))
-                .font(.body.monospacedDigit())
-                .foregroundStyle(transaction.amount < 0 ? .red : .green)
-        }
-    }
-}
-
-// MARK: - AccountType display helper
-
-private extension AccountType {
-    var displayName: String {
-        switch self {
-        case .checking:    return "Checking"
-        case .savings:     return "Savings"
-        case .credit:      return "Credit"
-        case .investment:  return "Investment"
-        case .unknown:     return "Account"
+            .accessibilityIdentifier("home.logOut")
+            .background(Color(.systemBackground))
         }
     }
 }
