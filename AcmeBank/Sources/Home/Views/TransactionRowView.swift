@@ -12,9 +12,13 @@ struct TransactionRowView: View {
 
     let transaction: Transaction
 
-    /// The BFF does not send a per-transaction currency; the demo
-    /// dataset is uniformly USD, so amounts render in USD.
-    private static let displayCurrency = "USD"
+    /// Currency the amount renders in. The BFF sends no per-transaction
+    /// currency, so the caller supplies the owning account's currency
+    /// (see `HomeDashboard.displayCurrency(for:)`). Passing it in — rather
+    /// than hardcoding `"USD"` — keeps the transaction list in the same
+    /// currency as the accounts (e.g. CAD), so a CAD account's activity no
+    /// longer renders as `US$`.
+    let currencyCode: String
 
     // MARK: - Body
 
@@ -36,7 +40,7 @@ struct TransactionRowView: View {
 
             Spacer()
 
-            Text(transaction.amount.formatted(currencyCode: Self.displayCurrency))
+            Text(transaction.amount.formatted(currencyCode: currencyCode))
                 .font(.body.monospacedDigit())
                 .foregroundColor(.primary)
         }
@@ -89,7 +93,8 @@ struct TransactionRowView: View {
                 description: "Starbucks Coffee",
                 amount: Decimal(string: "-5.75")!,
                 postedDate: Date()
-            )
+            ),
+            currencyCode: "CAD"
         )
         TransactionRowView(
             transaction: Transaction(
@@ -98,7 +103,8 @@ struct TransactionRowView: View {
                 description: "Payroll Deposit",
                 amount: Decimal(string: "3200.00")!,
                 postedDate: Date()
-            )
+            ),
+            currencyCode: "CAD"
         )
     }
     .padding()

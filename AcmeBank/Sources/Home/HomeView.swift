@@ -127,7 +127,8 @@ struct HomeView: View {
                             .padding(.vertical, 8)
                     } else {
                         ForEach(dashboard.recentTransactions, id: \.id) { tx in
-                            TransactionRowView(transaction: tx)
+                            TransactionRowView(transaction: tx,
+                                               currencyCode: dashboard.displayCurrency(for: tx))
                             if tx.id != dashboard.recentTransactions.last?.id {
                                 Divider()
                                     .padding(.leading, 54)

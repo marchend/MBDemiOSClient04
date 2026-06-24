@@ -22,15 +22,18 @@ import UIKit
 /// New callers should drive `signIn(username:password:keepSignedIn:)`
 /// directly.
 ///
-/// NOTE on actor isolation: the class is deliberately NOT `@MainActor`
-/// so the existing synchronous XCTest cases can construct it and
-/// mutate fields off the main thread without isolation diagnostics.
-/// The async `signIn(username:password:keepSignedIn:)` body mutates
-/// `@Published` properties from whatever context the caller chose;
-/// SwiftUI's bindings are itself main-actor isolated so production UI
-/// updates ride the standard publisher path. If a future PR adopts
-/// strict Swift 6 concurrency, this class becomes a candidate for
-/// `@MainActor`.
+/// NOTE on actor isolation: the class itself is NOT `@MainActor` (so the
+/// synchronous XCTest cases can construct it and exercise the derived
+/// `isSignInEnabled` / zero-arg `signIn()` trigger without isolation
+/// diagnostics), but the async `signIn(username:password:keepSignedIn:)`
+/// IS `@MainActor`. That async body mutates `@Published` state
+/// (`session`, `errorMessage`, `isSigningIn`) and is launched from a
+/// `Task` inside the zero-arg trigger — without main-actor isolation it
+/// runs on a background executor and SwiftUI logs "Publishing changes
+/// from background threads is not allowed", dropping the `session`
+/// publish so a *successful* sign-in never advances past Login. This
+/// mirrors `HomeViewModel`, where only `load()` / `signOut()` carry the
+/// annotation for the same reason.
 final class LoginViewModel: ObservableObject {
     // MARK: - Published state
 
@@ -175,6 +178,15 @@ final class LoginViewModel: ObservableObject {
     ///
     /// `isSigningIn` is always cleared in a `defer` so a thrown error
     /// or a guard-return cannot leave the spinner stuck on.
+    ///
+    /// Annotated `@MainActor` so every `@Published` mutation below
+    /// (`errorMessage`, `isSigningIn`, `session`) is delivered on the
+    /// main thread — including when the zero-arg `signIn()` launches this
+    /// from a background `Task`. Without it SwiftUI logs "Publishing
+    /// changes from background threads is not allowed" and the `session`
+    /// publish can be dropped, leaving a successful sign-in stuck on the
+    /// Login screen.
+    @MainActor
     func signIn(username: String, password: String, keepSignedIn: Bool) async {
         // .notConfigured precheck — surface the configured-on-this-build
         // banner WITHOUT making a network call or flipping the spinner.
