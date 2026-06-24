@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// Bootstrap placeholder screen.
-/// Future PRs will replace this with RootView → LoginCoordinator / TabBarCoordinator.
+/// App composition root.
+/// Presents `LoginView` as the initial screen.
+/// The `onSignIn` closure will be replaced with a real auth integration in a future PR.
 struct ContentView: View {
     var body: some View {
-        Text("AcmeBank")
-            .font(.largeTitle)
-            .fontWeight(.bold)
-            .accessibilityIdentifier("acmeBankLabel")
+        LoginView(viewModel: LoginViewModel(onSignIn: { _, _ in }))
     }
 }
 
