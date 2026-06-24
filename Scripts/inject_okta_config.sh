@@ -29,8 +29,22 @@ set -u
 
 PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
 
+# Stamp file declared as this phase's `outputFiles` in project.yml.
+# It is NOT the built Info.plist (Xcode's ProcessInfoPlistFile task
+# already claims that path; declaring it here too would trigger a
+# "Multiple commands produce …" error). The stamp gives Xcode a real,
+# unique file to track for this phase; we `touch` it on every
+# successful run below.
+STAMP="${DERIVED_FILE_DIR}/inject_okta_config.stamp"
+
 if [[ ! -f "${PLIST}" ]]; then
     echo "warning: inject_okta_config.sh: Info.plist not found at ${PLIST}; skipping"
+    # Still touch the stamp so Xcode's output-file bookkeeping is
+    # satisfied even on the skip path; otherwise the phase would be
+    # considered perpetually out-of-date for a different reason
+    # (missing declared output) and could produce spurious warnings.
+    mkdir -p "${DERIVED_FILE_DIR}"
+    /usr/bin/touch "${STAMP}"
     exit 0
 fi
 
@@ -63,3 +77,9 @@ inject_key "OKTA_ISSUER"       "${OKTA_ISSUER:-}"
 inject_key "OKTA_CLIENT_ID"    "${OKTA_CLIENT_ID:-}"
 inject_key "OKTA_REDIRECT_URI" "${OKTA_REDIRECT_URI:-}"
 inject_key "OKTA_SCOPES"       "${OKTA_SCOPES:-}"
+
+# Stamp the declared output so Xcode's sandbox/output bookkeeping sees
+# the file the phase promised to produce. `mkdir -p` guards against
+# DERIVED_FILE_DIR not yet existing on a fully-clean build.
+mkdir -p "${DERIVED_FILE_DIR}"
+/usr/bin/touch "${STAMP}"

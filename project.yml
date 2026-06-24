@@ -42,14 +42,21 @@ targets:
       #
       # Sandbox interaction: this phase writes a file OUTSIDE its
       # default sandbox (the built Info.plist under TARGET_BUILD_DIR).
-      # Rather than disabling user-script sandboxing target-wide
-      # (which would weaken every current and future Run Script phase),
-      # we declare the exact output path here so Xcode's sandbox
-      # grants write access to just that file. `alwaysOutOfDate: true`
-      # (XcodeGen 2.37+) marks the phase as always-dirty so Xcode runs
-      # it every build — necessary because env vars can change between
-      # builds without any input file changing, and a previous build's
-      # sentinel write would otherwise stick around.
+      # We CANNOT narrow the grant by declaring the built Info.plist
+      # as `outputFiles` — Xcode's built-in ProcessInfoPlistFile task
+      # already declares that exact path as its own output, and two
+      # build commands declaring the same output is a hard
+      # "Multiple commands produce …" error that fails project
+      # validation before any source compiles. Instead we (a) declare
+      # a private stamp file under $(DERIVED_FILE_DIR) so Xcode has a
+      # real, unique output to track for this phase, and (b) disable
+      # user-script sandboxing on this target (settings.base below)
+      # so the script is permitted to write the built Info.plist.
+      # `alwaysOutOfDate: true` (XcodeGen 2.37+) marks the phase as
+      # always-dirty so Xcode runs it every build — necessary because
+      # env vars can change between builds without any input file
+      # changing, and a previous build's sentinel write would
+      # otherwise stick around.
       #
       # We invoke the script via `bash "$SRCROOT/Scripts/…"` rather
       # than `path:` so the executable bit on the script file is
@@ -61,7 +68,10 @@ targets:
           bash "$SRCROOT/Scripts/inject_okta_config.sh"
         inputFiles: []
         outputFiles:
-          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+          # Private stamp file — NOT the built Info.plist (see comment
+          # above re: ProcessInfoPlistFile collision). The script
+          # `touch`es this at the end so the declared output exists.
+          - $(DERIVED_FILE_DIR)/inject_okta_config.stamp
         alwaysOutOfDate: true
     settings:
       base:
@@ -74,6 +84,16 @@ targets:
         # real source plist + INFOPLIST_FILE.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AcmeBank/Info.plist
+        # The Run Script phase above writes to the built Info.plist
+        # at ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, which lives
+        # OUTSIDE the script's default sandbox. The narrower fix
+        # (declaring the built Info.plist as `outputFiles`) is not
+        # available to us here because ProcessInfoPlistFile already
+        # claims that exact path as its output, and Xcode rejects
+        # duplicate outputs with "Multiple commands produce …".
+        # Disabling user-script sandboxing target-wide is the only
+        # remaining mechanism Xcode offers to grant the write.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_ENTITLEMENTS: AcmeBank/AcmeBank.entitlements
