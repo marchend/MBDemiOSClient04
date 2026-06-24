@@ -38,33 +38,34 @@ final class LoginViewModelTests: XCTestCase {
                       "isSignInEnabled must be true when both fields have text")
     }
 
-    // MARK: - signIn() closure invocation
+    // MARK: - signIn() no longer dual-triggers the legacy closure
+    //
+    // Prior to the PR-review pass, the zero-arg `signIn()` invoked the
+    // legacy `onSignIn(username, password)` closure AND launched an
+    // async Task that called the real Direct-Auth path. That was a
+    // double-trigger — one button tap fired two distinct sign-in
+    // pathways. The contract is now: zero-arg `signIn()` is the
+    // single path into Direct-Auth and the legacy closure is no
+    // longer fired from it. (The closure property is retained only
+    // so existing call sites compile until the composition root
+    // migrates to the async method.)
 
-    func test_signIn_invokesClosureWithCredentials() {
-        var capturedUsername: String?
-        var capturedPassword: String?
+    func test_signIn_doesNotFireLegacyClosure() {
+        var legacyClosureFired = false
 
-        // Inject a configProvider that returns .notConfigured so the
-        // async Task launched alongside the legacy closure
-        // short-circuits without touching the real Okta client. The
-        // legacy onSignIn closure still fires synchronously and is
-        // what this assertion targets.
+        // Inject .notConfigured so the async Task short-circuits
+        // immediately without touching the real Okta client.
         let sut = LoginViewModel(
             configProvider: { .notConfigured(reason: "test") },
-            onSignIn: { username, password in
-                capturedUsername = username
-                capturedPassword = password
-            }
+            onSignIn: { _, _ in legacyClosureFired = true }
         )
 
         sut.username = "user@acmebank.com"
         sut.password = "secret123"
         sut.signIn()
 
-        XCTAssertEqual(capturedUsername, "user@acmebank.com",
-                       "onSignIn should receive the entered username")
-        XCTAssertEqual(capturedPassword, "secret123",
-                       "onSignIn should receive the entered password")
+        XCTAssertFalse(legacyClosureFired,
+                       "Zero-arg signIn() must NOT fire the legacy onSignIn closure — that would double-trigger the auth flow")
     }
 
     func test_signIn_doesNotInvokeClosure_whenFieldsEmpty() {
@@ -80,6 +81,59 @@ final class LoginViewModelTests: XCTestCase {
 
         XCTAssertFalse(invoked,
                        "onSignIn must not be called when isSignInEnabled is false")
+    }
+
+    // MARK: - Concurrency guard on zero-arg signIn()
+    //
+    // Rapid double-taps used to be able to launch two concurrent
+    // auth calls because the `isSigningIn` flag was only set inside
+    // the async body. The fix flips `isSigningIn = true` synchronously
+    // inside `signIn()` before the Task is spawned, so the guard on
+    // the SECOND tap sees the in-flight state and bails out.
+
+    func test_signIn_secondCallWhileInFlight_isIgnored() {
+        let sut = LoginViewModel(
+            configProvider: { .notConfigured(reason: "test") },
+            onSignIn: { _, _ in }
+        )
+        sut.username = "ada"
+        sut.password = "pw"
+
+        // Simulate the in-flight state directly (the async Task body
+        // would set this on its own, but we want a deterministic
+        // synchronous assertion here — the production code flips the
+        // flag synchronously inside `signIn()` before spawning the
+        // Task, so a second tap arriving immediately must see `true`).
+        sut.isSigningIn = true
+
+        sut.signIn()
+
+        // The guard short-circuited → errorMessage / session were not
+        // touched and `isSigningIn` stays true (the in-flight Task
+        // owns clearing it).
+        XCTAssertTrue(sut.isSigningIn,
+                      "A second signIn() call while in flight must not clear or re-arm the spinner")
+        XCTAssertNil(sut.errorMessage,
+                     "A short-circuited second signIn() must not write a banner")
+        XCTAssertNil(sut.session)
+    }
+
+    func test_signIn_setsIsSigningInSynchronously() {
+        // The whole point of the synchronous check-and-set is that
+        // `isSigningIn` flips BEFORE the Task body runs. We assert
+        // that flip is observable on the SAME run-loop turn as the
+        // call (i.e. without any `await`).
+        let sut = LoginViewModel(
+            configProvider: { .notConfigured(reason: "test") },
+            onSignIn: { _, _ in }
+        )
+        sut.username = "ada"
+        sut.password = "pw"
+
+        XCTAssertFalse(sut.isSigningIn, "must start false")
+        sut.signIn()
+        XCTAssertTrue(sut.isSigningIn,
+                      "isSigningIn must be set synchronously inside signIn() so concurrent taps short-circuit")
     }
 
     // MARK: - errorMessage
@@ -415,6 +469,25 @@ final class LoginViewModelTests: XCTestCase {
     /// `OktaAuthenticating` fake that calls `observer.onSignInCalled`
     /// INSIDE its `signIn` body before returning, giving the test
     /// method a chance to sample `viewModel.isSigningIn` mid-flight.
+    ///
+    /// FIXME(MBE2EDEM04): this fake observes `isSigningIn` by
+    /// piggy-backing on the fact that `signIn` is `async throws` but
+    /// contains NO `await` points — so it runs to completion
+    /// synchronously on the caller's actor and the `onSignInCalled`
+    /// callback fires while the VM is still inside the `do` block
+    /// (after `isSigningIn = true` has been written). That works
+    /// today because `LoginViewModel` is NOT `@MainActor` (see the
+    /// note on actor isolation in the VM doc comment). If a future
+    /// PR adopts `@MainActor` on the VM, the `isSigningIn = true`
+    /// write will be hopped to the main actor and this callback will
+    /// sample `false`, silently inverting `midFlightIsSigningIn` and
+    /// failing the assertion. Before that migration lands, replace
+    /// this fake with a `CheckedContinuation`-based version that
+    /// actually suspends the auth call until the test signals it to
+    /// resume — that pattern is immune to actor-hop ordering because
+    /// the suspension point gives the VM a real, deterministic
+    /// chance to publish `isSigningIn = true` before the observation
+    /// callback runs.
     private final class ObservingAuthClient: OktaAuthenticating {
         enum Result {
             case success(AuthTokens)

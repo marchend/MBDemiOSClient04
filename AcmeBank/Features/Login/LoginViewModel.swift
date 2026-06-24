@@ -16,9 +16,10 @@ import UIKit
 ///
 /// The legacy closure-based `onSignIn(username, password)` initializer
 /// is preserved so existing call sites and tests that pre-date the
-/// Auth-layer wiring continue to compile. The closure is invoked
-/// alongside the async auth flow when the user taps Sign In; new
-/// callers should drive `signIn(username:password:keepSignedIn:)`
+/// Auth-layer wiring continue to compile. The closure is NO LONGER
+/// invoked alongside the async auth flow when the user taps Sign In
+/// — see the note on the zero-arg `signIn()` for the rationale.
+/// New callers should drive `signIn(username:password:keepSignedIn:)`
 /// directly.
 ///
 /// NOTE on actor isolation: the class is deliberately NOT `@MainActor`
@@ -85,6 +86,13 @@ final class LoginViewModel: ObservableObject {
     /// the composition root construct the VM with
     /// `LoginViewModel(onSignIn: { _, _ in })`. New code should use
     /// the async `signIn(username:password:keepSignedIn:)` method.
+    ///
+    /// NOTE: as of this review-feedback pass the zero-arg `signIn()`
+    /// no longer fires this closure — it would cause a double-trigger
+    /// alongside the async Direct-Auth path. The property is retained
+    /// only so the existing call sites compile; once the composition
+    /// root migrates to driving the async method directly, this field
+    /// and the trailing `onSignIn:` parameter will be removed.
     let onSignIn: (String, String) -> Void
 
     // MARK: - Init
@@ -100,12 +108,17 @@ final class LoginViewModel: ObservableObject {
         configProvider: @escaping () -> OktaConfig = { OktaConfig.load() },
         onSignIn: @escaping (String, String) -> Void = { _, _ in }
     ) {
-        // Defer constructing the live `OktaDirectAuthClient` until we
-        // know the caller didn't inject a fake. The live adapter
-        // reads `OktaConfig.load()` eagerly off `Bundle.main`, which
-        // is fine in production but pointless to do in tests that
-        // inject a fake `OktaAuthenticating`.
-        self.authClient = authClient ?? OktaDirectAuthClient(config: OktaConfig.load())
+        // Resolve the config ONCE through the supplied `configProvider`
+        // so the fallback live adapter and the per-sign-in
+        // short-circuit guard always agree on the same config value.
+        // Previously the init read `OktaConfig.load()` directly here
+        // and then `configProvider` (defaulting to a SECOND
+        // `OktaConfig.load()` call) was used at sign-in time — fine in
+        // production but allowed an injected `configProvider` (e.g. a
+        // test or preview supplying `.notConfigured`) to disagree with
+        // the live adapter built from `Bundle.main`.
+        let resolvedConfig = configProvider()
+        self.authClient = authClient ?? OktaDirectAuthClient(config: resolvedConfig)
         self.tokenStore = tokenStore ?? KeychainTokenStore()
         self.configProvider = configProvider
         self.onSignIn = onSignIn
@@ -114,14 +127,33 @@ final class LoginViewModel: ObservableObject {
     // MARK: - Actions
 
     /// The UI's existing zero-arg sign-in trigger (called from the
-    /// Sign In button). Guards on `isSignInEnabled`, invokes the
-    /// legacy `onSignIn` closure for back-compat, then launches the
-    /// async auth flow with `keepSignedIn: false` (the toggle is
-    /// owned by the UI story; defaulting here keeps the existing call
-    /// site working until that wiring lands).
+    /// Sign In button).
+    ///
+    /// Behaviour:
+    ///   1. Synchronously guards on `isSignInEnabled` AND on
+    ///      `!isSigningIn` so rapid double-taps before the async body
+    ///      has flipped `isSigningIn = true` cannot launch two
+    ///      concurrent auth calls against the same credentials.
+    ///   2. Sets `isSigningIn = true` SYNCHRONOUSLY (the async path
+    ///      sets it again, which is a harmless no-op) so the
+    ///      check-and-set is race-free.
+    ///   3. Launches the async Direct-Auth flow with
+    ///      `keepSignedIn: false`. The legacy `onSignIn` closure is
+    ///      intentionally NOT fired here — firing it alongside the
+    ///      async Task produced a double-trigger and made the
+    ///      user-visible "one tap = one auth call" contract untrue.
+    ///
+    /// TODO(MBE2EDEM04): wire the "Keep me signed in" toggle from
+    /// the UI through to `keepSignedIn` once the companion UI story
+    /// surfaces the toggle state. The async method already honours
+    /// the parameter; this zero-arg call site is the only place
+    /// hardcoding `false`.
     func signIn() {
-        guard isSignInEnabled else { return }
-        onSignIn(username, password)
+        guard isSignInEnabled, !isSigningIn else { return }
+        // Synchronous check-and-set so a second tap arriving before
+        // the Task body runs cannot pass the guard above. The async
+        // body re-assigns this to `true` and clears it in `defer`.
+        isSigningIn = true
         let u = username
         let p = password
         Task { [weak self] in
@@ -151,6 +183,11 @@ final class LoginViewModel: ObservableObject {
         // just write the glyph.)
         if case .notConfigured = configProvider() {
             errorMessage = "Okta is not configured on this build — see README"
+            // If the zero-arg `signIn()` flipped `isSigningIn = true`
+            // synchronously before launching this Task, we must clear
+            // it here on the short-circuit path — we return BEFORE
+            // entering the `defer` block below.
+            isSigningIn = false
             return
         }
 
