@@ -45,9 +45,14 @@ struct LoginView: View {
 
                         SignInButtonView(
                             isEnabled: viewModel.isSignInEnabled,
+                            isSigningIn: viewModel.isSigningIn,
                             action: viewModel.signIn
                         )
                     }
+                    // Lock the fields (and the button via its own flag)
+                    // while a sign-in is in flight so the user can't
+                    // mutate the credentials mid-request.
+                    .disabled(viewModel.isSigningIn)
 
                     Spacer(minLength: 16)
                 }
