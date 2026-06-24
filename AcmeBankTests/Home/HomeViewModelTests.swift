@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import AcmeBank
 
 final class HomeViewModelTests: XCTestCase {
@@ -37,28 +38,62 @@ final class HomeViewModelTests: XCTestCase {
 
     /// `HomeRepositoryProtocol` that suspends until the test signals
     /// it to resume. Used to observe the `.loading` state mid-flight.
+    ///
+    /// Coordination is handled through two `AsyncStream`-backed
+    /// channels so there is no race between the test and the task:
+    ///  - `fetchHome()` yields to `didEnterStream` the moment it is
+    ///    entered (before suspending), then blocks on `resumeStream`.
+    ///  - The test awaits `waitUntilEntered()` which consumes the
+    ///    first element from `didEnterStream` — deterministic, no
+    ///    sleeps required.
     private final class SuspendingRepository: HomeRepositoryProtocol {
-        private var continuation: CheckedContinuation<HomeDashboard, Error>?
         private let result: FakeHomeRepository.Outcome
+
+        // Channel: repository → test ("I have entered fetchHome")
+        private let didEnterStream: AsyncStream<Void>
+        private let didEnterContinuation: AsyncStream<Void>.Continuation
+
+        // Channel: test → repository ("you may now complete")
+        private let resumeStream: AsyncStream<Void>
+        private let resumeContinuation: AsyncStream<Void>.Continuation
 
         init(result: FakeHomeRepository.Outcome = .success(StubHomeRepository.bankuserOneFixture)) {
             self.result = result
+
+            var diec: AsyncStream<Void>.Continuation!
+            self.didEnterStream = AsyncStream { diec = $0 }
+            self.didEnterContinuation = diec
+
+            var rc: AsyncStream<Void>.Continuation!
+            self.resumeStream = AsyncStream { rc = $0 }
+            self.resumeContinuation = rc
         }
 
         func fetchHome() async throws -> HomeDashboard {
-            try await withCheckedThrowingContinuation { cont in
-                self.continuation = cont
+            // Notify the test that we have entered — happens before
+            // the actual suspension so the test sees .loading is set.
+            didEnterContinuation.yield()
+
+            // Block until the test calls resume().
+            for await _ in resumeStream { break }
+
+            switch result {
+            case .success(let d): return d
+            case .failure(let e): throw e
             }
         }
 
-        /// Resume the suspended `fetchHome()` call with its result.
+        /// Awaits until `fetchHome()` has been called. Returns as soon
+        /// as the repository side signals entry, guaranteeing that
+        /// `HomeViewModel.load()` has already set `state = .loading`
+        /// before this returns.
+        func waitUntilEntered() async {
+            for await _ in didEnterStream { break }
+        }
+
+        /// Unblocks the suspended `fetchHome()` call.
         func resume() {
-            switch result {
-            case .success(let d):
-                continuation?.resume(returning: d)
-            case .failure(let e):
-                continuation?.resume(throwing: e)
-            }
+            resumeContinuation.yield()
         }
     }
 
@@ -126,10 +161,13 @@ final class HomeViewModelTests: XCTestCase {
         // Kick off load() on a background task so we can observe mid-flight.
         let loadTask = Task { await sut.load() }
 
-        // Yield to let the Task start executing and set .loading.
-        // A short sleep is the standard approach for catching
-        // synchronously-unreachable state after a single yield.
-        try? await Task.sleep(nanoseconds: 5_000_000) // 5 ms
+        // Wait deterministically for fetchHome() to have been entered.
+        // `SuspendingRepository.fetchHome()` signals entry via an
+        // AsyncStream before suspending, so by the time this returns
+        // `HomeViewModel.load()` has already executed `state = .loading`
+        // and the repository is blocked waiting for `resume()`.
+        // No time-based sleep needed — this is a structured rendezvous.
+        await suspending.waitUntilEntered()
 
         XCTAssertEqual(sut.state, .loading, "State must be .loading while fetch is suspended")
 

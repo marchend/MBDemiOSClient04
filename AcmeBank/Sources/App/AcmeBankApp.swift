@@ -4,32 +4,32 @@ import UIKit
 /// App composition root.
 ///
 /// State machine:
-///   - `session == nil`  \u2192 show `LoginView`. The shared
+///   - `session == nil`  → show `LoginView`. The shared
 ///     `LoginViewModel` publishes a `UserSession?` whose non-nil
 ///     transition (driven by a successful Direct-Auth round-trip)
-///     promotes us to the Landing branch.
-///   - `session != nil`  \u2192 show `LandingView(session:)`.
+///     promotes us to the Home branch.
+///   - `session != nil`  → show `HomeView(session:onSignOut:)`.
 ///
 /// On launch we attempt a cold-start refresh-token reuse: if the user
 /// previously checked "Keep me signed in" we have a refresh token in
 /// the keychain, and we use it to mint a fresh ID + access pair via
 /// `SessionRestorer.restore(...)`. Any failure (network, IdP-rejected
 /// stale token, malformed response) clears the stored refresh token
-/// and falls through to Login \u2014 the prior lesson "wire the real
+/// and falls through to Login — the prior lesson "wire the real
 /// integration, delete the stub bootstrap" is honoured here by the
 /// fact that there is NO hardcoded placeholder display name in the
-/// shipped code: the ONLY way to reach Landing is through a real
+/// shipped code: the ONLY way to reach Home is through a real
 /// `UserSession`.
 @main
 struct AcmeBankApp: App {
-    /// Shared Login VM \u2014 we hold it on the App so its `@Published
+    /// Shared Login VM — we hold it on the App so its `@Published
     /// session` publisher survives across LoginView re-creations and
     /// so the launch-time `onReceive` binding has a stable source.
     @StateObject private var loginViewModel = LoginViewModel()
 
     /// The single source of truth for "are we signed in?". Mutating
     /// this on the main actor flips the root view between Login and
-    /// Landing.
+    /// Home.
     @State private var session: UserSession?
 
     /// Guard so the cold-start restore runs exactly once per process
@@ -42,7 +42,9 @@ struct AcmeBankApp: App {
         WindowGroup {
             Group {
                 if let session {
-                    LandingView(session: session)
+                    HomeView(session: session, onSignOut: {
+                        self.session = nil
+                    })
                 } else {
                     LoginView(viewModel: loginViewModel)
                 }
@@ -50,11 +52,11 @@ struct AcmeBankApp: App {
             // Promote a successful Direct-Auth sign-in (published as
             // `LoginViewModel.session`) into our root-level `session`
             // state so the next SwiftUI body evaluation swaps in
-            // LandingView. Attached to the outer `Group` rather than
+            // HomeView. Attached to the outer `Group` rather than
             // to `LoginView` so the subscription's lifetime matches
             // the scene root, not the (transient) LoginView instance.
-            // This matters once a sign-out flow ships: a Landing \u2192
-            // Login \u2192 Landing round trip will keep observing this
+            // This matters once a sign-out flow ships: a Home →
+            // Login → Home round trip will keep observing this
             // publisher continuously, instead of tearing the
             // subscription down and re-creating it (and possibly
             // missing a publish that arrived during the layout pass
@@ -76,7 +78,7 @@ struct AcmeBankApp: App {
     ///   1. We haven't already attempted a restore this process.
     ///   2. There is a refresh token in the keychain (user opted into
     ///      "Keep me signed in" on a previous run).
-    ///   3. `OktaConfig` is `.configured` \u2014 no point calling the SDK
+    ///   3. `OktaConfig` is `.configured` — no point calling the SDK
     ///      with sentinel issuer / client id.
     ///
     /// On a `SessionRestorer.restore(...)` throw we differentiate by
@@ -85,8 +87,8 @@ struct AcmeBankApp: App {
     /// `.notConfigured`) clear the keychain so the next launch
     /// doesn't burn another round trip on a known-bad value; transient
     /// failures (`.network`, `.mfaRequired`, or any non-typed throw)
-    /// preserve the token so a flaky connection \u2014 or a staged auth
-    /// client whose `refresh(...)` implementation is not yet live \u2014
+    /// preserve the token so a flaky connection — or a staged auth
+    /// client whose `refresh(...)` implementation is not yet live —
     /// does NOT silently purge a valid "Keep me signed in" token from
     /// the keychain on first cold launch. We deliberately don't
     /// surface the failure as an error banner: this is a silent
@@ -102,7 +104,7 @@ struct AcmeBankApp: App {
         do {
             refreshToken = try tokenStore.loadRefreshToken()
         } catch {
-            // Keychain read failed \u2014 treat as "no token". The
+            // Keychain read failed — treat as "no token". The
             // refresh-token path is opportunistic; a keychain glitch
             // never blocks the user from signing in fresh.
             return
@@ -167,7 +169,7 @@ struct AcmeBankApp: App {
                 break
             }
         } catch {
-            // Non-typed throw \u2014 we don't know whether the token is
+            // Non-typed throw — we don't know whether the token is
             // actually bad. Preserve it; the user re-signs-in this
             // launch and we retry on the next cold start.
         }

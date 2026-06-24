@@ -22,8 +22,9 @@ public final class BFFHomeRepository: HomeRepositoryProtocol {
     private let baseURL: String?
 
     /// Production initializer. Reads `API_BASE_URL` from the main
-    /// bundle at call time (not init time) so tests can override the
-    /// bundle injection independently of construction.
+    /// bundle at **init** time and caches it as a stored property.
+    /// Tests that need a custom base URL should use the internal
+    /// `init(session:baseURL:urlSession:)` seam instead.
     public init(session: UserSession, urlSession: URLSession = .shared) {
         self.session = session
         self.urlSession = urlSession

@@ -14,10 +14,10 @@ public enum HomeViewState: Equatable {
 /// On HTTP 401 the ViewModel clears the Keychain and fires `onSignOut`
 /// so the app coordinator can navigate back to Login.
 ///
-/// NOT `@MainActor` on the class — only `load()` is `@MainActor` so
-/// that `@Published` mutations reach the UI on the main thread. This
-/// mirrors the pattern established by `LoginViewModel` and avoids
-/// forcing every async collaborator to also be MainActor.
+/// NOT `@MainActor` on the class — only `load()` and `signOut()` are
+/// `@MainActor` so that `@Published` mutations reach the UI on the
+/// main thread. This mirrors the pattern established by `LoginViewModel`
+/// and avoids forcing every async collaborator to also be MainActor.
 public final class HomeViewModel: ObservableObject {
 
     // MARK: - Published state
@@ -87,9 +87,18 @@ public final class HomeViewModel: ObservableObject {
 
     /// Manually sign the user out.
     ///
+    /// Annotated `@MainActor` to match the 401-triggered sign-out path
+    /// (which always runs on the main actor via `load()`). This ensures
+    /// the `onSignOut` closure — typically `{ session = nil }` mutating
+    /// SwiftUI `@State` — is always invoked on the main thread,
+    /// preventing data races from SwiftUI button actions that run on
+    /// the main thread by convention but not by Swift Concurrency
+    /// contract.
+    ///
     /// Clears the Keychain and fires `onSignOut`. The state machine
     /// is left in its current state because the coordinator will
     /// navigate away immediately.
+    @MainActor
     public func signOut() {
         clearKeychainAndSignOut()
     }
