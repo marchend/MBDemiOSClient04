@@ -38,11 +38,18 @@ targets:
       # `plutil -replace`. Why postBuild: at this point Xcode has
       # already processed the source Info.plist into
       # ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, so the script mutates
-      # the file that actually ships with the .app. Empty
-      # inputFiles/outputFiles so Xcode runs this phase EVERY build
-      # — otherwise an unchanged env var would let Xcode skip the
-      # phase even though the previous build wrote sentinels we now
-      # need to overwrite (or vice-versa).
+      # the file that actually ships with the .app.
+      #
+      # Sandbox interaction: this phase writes a file OUTSIDE its
+      # default sandbox (the built Info.plist under TARGET_BUILD_DIR).
+      # Rather than disabling user-script sandboxing target-wide
+      # (which would weaken every current and future Run Script phase),
+      # we declare the exact output path here so Xcode's sandbox
+      # grants write access to just that file. `alwaysOutOfDate: true`
+      # (XcodeGen 2.37+) marks the phase as always-dirty so Xcode runs
+      # it every build — necessary because env vars can change between
+      # builds without any input file changing, and a previous build's
+      # sentinel write would otherwise stick around.
       #
       # We invoke the script via `bash "$SRCROOT/Scripts/…"` rather
       # than `path:` so the executable bit on the script file is
@@ -53,7 +60,9 @@ targets:
         script: |
           bash "$SRCROOT/Scripts/inject_okta_config.sh"
         inputFiles: []
-        outputFiles: []
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        alwaysOutOfDate: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.acmebank.mobile
@@ -68,7 +77,6 @@ targets:
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_ENTITLEMENTS: AcmeBank/AcmeBank.entitlements
-        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   AcmeBankTests:
     type: bundle.unit-test

@@ -42,40 +42,70 @@ public enum OktaConfig: Equatable {
         let redirectRaw    = nonSentinelString(info[redirectUriKey])
         let scopesRaw      = nonSentinelString(info[scopesKey])
 
-        // Collect missing keys in declaration order so the reason
-        // string is stable and grep-friendly.
-        var missing: [String] = []
-        if issuerRaw    == nil { missing.append(issuerKey) }
-        if clientIdRaw  == nil { missing.append(clientIdKey) }
-        if redirectRaw  == nil { missing.append(redirectUriKey) }
-        if scopesRaw    == nil { missing.append(scopesKey) }
+        // Collect ALL diagnostic problems (missing keys AND malformed
+        // URL values) in declaration order before deciding to bail.
+        // Previously we returned on the first missing-key check and
+        // only validated URLs afterward — so a misconfigured plist
+        // with `OKTA_ISSUER = "not a url"` AND a sentinel
+        // `OKTA_CLIENT_ID` would report only the client-id problem,
+        // and the developer would fix that, rebuild, and discover the
+        // bad issuer URL in a second round. Collecting both in one
+        // pass means the reason string is exhaustive on a single
+        // build and the dev fixes all problems before the next run.
+        var problems: [String] = []
+        if issuerRaw    == nil { problems.append("missing \(issuerKey)") }
+        if clientIdRaw  == nil { problems.append("missing \(clientIdKey)") }
+        if redirectRaw  == nil { problems.append("missing \(redirectUriKey)") }
+        if scopesRaw    == nil { problems.append("missing \(scopesKey)") }
 
-        if !missing.isEmpty {
+        // Validate URLs for keys that ARE present and non-sentinel.
+        // We still need to capture the parsed URL for the success
+        // path, so we compute it eagerly and append a problem entry
+        // when validation fails.
+        var parsedIssuer: URL?
+        if let raw = issuerRaw {
+            if let url = URL(string: raw), url.scheme != nil {
+                parsedIssuer = url
+            } else {
+                problems.append("malformed URL for \(issuerKey): \(raw)")
+            }
+        }
+
+        var parsedRedirect: URL?
+        if let raw = redirectRaw {
+            if let url = URL(string: raw), url.scheme != nil {
+                parsedRedirect = url
+            } else {
+                problems.append("malformed URL for \(redirectUriKey): \(raw)")
+            }
+        }
+
+        // Scope list: present + non-sentinel + at least one token
+        // after whitespace-splitting. We compute this eagerly for the
+        // same reason as the URL parses above.
+        var parsedScopes: [String] = []
+        if let raw = scopesRaw {
+            parsedScopes = raw
+                .split(separator: " ", omittingEmptySubsequences: true)
+                .map(String.init)
+            if parsedScopes.isEmpty {
+                problems.append("empty scope list for \(scopesKey)")
+            }
+        }
+
+        if !problems.isEmpty {
             return .notConfigured(
-                reason: "Missing Okta config key(s): \(missing.joined(separator: ", "))"
+                reason: "Okta config problem(s): \(problems.joined(separator: "; "))"
             )
         }
 
-        guard let issuer = URL(string: issuerRaw!), issuer.scheme != nil else {
-            return .notConfigured(reason: "Malformed URL for \(issuerKey): \(issuerRaw!)")
-        }
-        guard let redirectUri = URL(string: redirectRaw!), redirectUri.scheme != nil else {
-            return .notConfigured(reason: "Malformed URL for \(redirectUriKey): \(redirectRaw!)")
-        }
-
-        let scopes = scopesRaw!
-            .split(separator: " ", omittingEmptySubsequences: true)
-            .map(String.init)
-
-        if scopes.isEmpty {
-            return .notConfigured(reason: "Empty scope list for \(scopesKey)")
-        }
-
+        // All four checks passed — by construction the optionals are
+        // populated and clientIdRaw is non-nil.
         return .configured(
-            issuer: issuer,
+            issuer: parsedIssuer!,
             clientId: clientIdRaw!,
-            redirectUri: redirectUri,
-            scopes: scopes
+            redirectUri: parsedRedirect!,
+            scopes: parsedScopes
         )
     }
 

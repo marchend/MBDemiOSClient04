@@ -34,15 +34,27 @@ if [[ ! -f "${PLIST}" ]]; then
     exit 0
 fi
 
+# Why we check `plutil`'s exit code explicitly rather than relying on
+# `set -e`: the env-var-unset case must stay graceful (sentinel write),
+# but a `plutil -replace` failure means a genuine problem — the target
+# key is absent from the source Info.plist, the plist is corrupt, or
+# the file isn't writable. Those are build errors, not "degrade at
+# runtime" cases, so we fail the build here with a clear message
+# instead of silently shipping a plist missing the OKTA_* keys (which
+# would surface later as `.notConfigured` at runtime with no
+# build-time signal of why).
 inject_key() {
     local key="$1"
     local value="$2"
     local sentinel="__${key}_UNSET__"
+    local write_value="${value:-${sentinel}}"
+    if ! /usr/bin/plutil -replace "${key}" -string "${write_value}" "${PLIST}"; then
+        echo "error: inject_okta_config.sh: failed to write ${key} to ${PLIST}" >&2
+        exit 1
+    fi
     if [[ -n "${value}" ]]; then
-        /usr/bin/plutil -replace "${key}" -string "${value}" "${PLIST}"
         echo "inject_okta_config.sh: wrote ${key} (real value)"
     else
-        /usr/bin/plutil -replace "${key}" -string "${sentinel}" "${PLIST}"
         echo "inject_okta_config.sh: wrote ${key} = ${sentinel}"
     fi
 }
