@@ -256,7 +256,12 @@ final class HomeViewModelTests: XCTestCase {
 
     // MARK: - signOut
 
-    func test_signOut_clearsKeychainAndCallsCallback() {
+    /// `signOut()` is `@MainActor`-isolated, so the test must be async
+    /// to hop onto the main actor before calling it.  Using
+    /// `MainActor.run` makes the isolation explicit and keeps the
+    /// test body synchronous-feeling while satisfying the Swift
+    /// Concurrency requirement.
+    func test_signOut_clearsKeychainAndCallsCallback() async {
         let tokenStore = FakeTokenStore()
         let signOutExpectation = expectation(description: "onSignOut called")
 
@@ -267,9 +272,13 @@ final class HomeViewModelTests: XCTestCase {
             tokenStore: tokenStore
         )
 
-        sut.signOut()
+        // signOut() is @MainActor — call it through MainActor.run to
+        // satisfy the concurrency requirement.
+        await MainActor.run {
+            sut.signOut()
+        }
 
-        wait(for: [signOutExpectation], timeout: 1.0)
+        await fulfillment(of: [signOutExpectation], timeout: 1.0)
         XCTAssertEqual(tokenStore.clearAllCallCount, 1,
                        "clearAll() must be called once when signOut() is invoked")
     }
