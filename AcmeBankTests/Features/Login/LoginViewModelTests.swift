@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import AcmeBank
 
 final class LoginViewModelTests: XCTestCase {
@@ -262,6 +263,44 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertNil(sut.session)
         XCTAssertFalse(sut.isSigningIn,
                        "isSigningIn must remain false on the .notConfigured short-circuit")
+    }
+
+    // MARK: - Threading regression (main-thread publish)
+
+    /// Regression for "Publishing changes from background threads is not
+    /// allowed". The async `signIn` mutates `@Published session`, and the
+    /// composition root advances navigation off that publish. If the body
+    /// runs on a background executor (i.e. `signIn` is NOT `@MainActor`),
+    /// the `session` publish is delivered off-main — SwiftUI drops/crashes
+    /// on it and a successful sign-in never leaves the Login screen.
+    ///
+    /// This asserts the publish lands on the main thread. It FAILS without
+    /// the `@MainActor` annotation on `signIn(username:password:keepSignedIn:)`
+    /// (the sink fires on a background thread) and PASSES with it.
+    func test_signIn_success_publishesSessionOnMainThread() async {
+        let tokens = AuthTokens(
+            idToken: Self.validIDToken,
+            accessToken: "access-1",
+            refreshToken: "refresh-1"
+        )
+        let sut = LoginViewModel(
+            authClient: FakeAuthClient(outcome: .success(tokens)),
+            tokenStore: FakeTokenStore(),
+            configProvider: Self.configuredProvider
+        )
+
+        var sessionDeliveredOnMainThread: Bool?
+        let cancellable = sut.$session
+            .dropFirst()                       // skip the initial `nil`
+            .sink { _ in sessionDeliveredOnMainThread = Thread.isMainThread }
+
+        await sut.signIn(username: "ada", password: "pw", keepSignedIn: false)
+
+        XCTAssertNotNil(sut.session, "a successful sign-in must publish a session")
+        XCTAssertEqual(sessionDeliveredOnMainThread, true,
+                       "session must be published on the main thread; a background publish "
+                       + "crashes SwiftUI and strands the user on the Login screen")
+        cancellable.cancel()
     }
 
     // MARK: - Success — keepSignedIn true
