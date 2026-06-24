@@ -19,5 +19,6 @@ Pods/
 
 # Okta config (contains secrets — copy from Okta.plist.example)
 AcmeBank/App/Okta.plist
-# Local Okta/API config written by setup.sh; read by the build's inject phase.
-okta.local.env
+# Local Okta/BFF secrets written by setup.sh; included by Config/AppConfig.xcconfig
+# and expanded into the built Info.plist at build time.
+Config/Secrets.local.xcconfig

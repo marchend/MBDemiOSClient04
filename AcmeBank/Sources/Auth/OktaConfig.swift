@@ -2,12 +2,15 @@ import Foundation
 
 /// Runtime Okta configuration loaded from the built Info.plist.
 ///
-/// The four `OKTA_*` keys are written into the app's Info.plist at build
-/// time by `Scripts/inject_okta_config.sh`, which reads the matching
-/// env vars from the calling process. When an env var is unset the
-/// script writes a sentinel string `__OKTA_<KEY>_UNSET__` instead, so
-/// the build always succeeds and missing config surfaces here at
-/// runtime rather than as a build failure.
+/// The `OKTA_*` keys appear in the source Info.plist as `$(VAR)`
+/// references and are supplied as build settings by
+/// `Config/AppConfig.xcconfig` (sentinel defaults, plus an optional
+/// `#include?` of the gitignored `Config/Secrets.local.xcconfig` that
+/// `setup.sh` writes from the OKTA_* env / launchctl). Xcode's
+/// ProcessInfoPlistFile expands them into the built Info.plist. When a
+/// value is unset its committed default is the sentinel
+/// `__OKTA_<KEY>_UNSET__`, so the build always succeeds and missing
+/// config surfaces here at runtime rather than as a build failure.
 ///
 /// `OktaConfig.load()` reads from `Bundle.main.infoDictionary` by
 /// default, but accepts an injectable dictionary for unit tests so we
@@ -111,7 +114,7 @@ public enum OktaConfig: Equatable {
 
     /// Returns the trimmed string if non-empty AND not a sentinel,
     /// otherwise `nil`. Sentinels follow the `__<KEY>_UNSET__`
-    /// convention written by `Scripts/inject_okta_config.sh`.
+    /// convention defined in `Config/AppConfig.xcconfig`.
     private static func nonSentinelString(_ value: Any?) -> String? {
         guard let raw = value as? String else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

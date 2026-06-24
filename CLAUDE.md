@@ -48,11 +48,12 @@ xcodebuild test \
 ### Current (bootstrap + Auth scaffold)
 ```
 project.yml                  ← XcodeGen spec (source of truth)
-setup.sh                     ← one-shot post-clone setup
-Scripts/
-  inject_okta_config.sh      ← build-time OKTA_* env → Info.plist (postBuildScript)
+setup.sh                     ← one-shot post-clone setup; writes Secrets.local.xcconfig
+Config/
+  AppConfig.xcconfig         ← OKTA_*/API_BASE_URL build settings (sentinel
+                                defaults + #include? of Secrets.local.xcconfig)
 AcmeBank/
-  Info.plist                 ← source plist with OKTA_* sentinel keys
+  Info.plist                 ← source plist; OKTA_* keys are $(VAR) build-setting refs
   App/
     AcmeBankApp.swift        ← @main entry (implemented)
     ContentView.swift        ← placeholder screen (implemented)
@@ -136,12 +137,13 @@ AcmeBankUITests/
 for runtime Okta config. It reads four keys from
 `Bundle.main.infoDictionary` and returns either
 `.configured(issuer:, clientId:, redirectUri:, scopes:)` or
-`.notConfigured(reason:)`. The four keys are written into the BUILT
-Info.plist at build time by `Scripts/inject_okta_config.sh`
-(a `postBuildScript` on the `AcmeBank` target). The script reads these
-env vars from the calling process and falls back to a sentinel
-`__OKTA_<KEY>_UNSET__` when an env var is unset, so the build never
-hard-fails on a fresh clone:
+`.notConfigured(reason:)`. The keys are expanded into the BUILT Info.plist
+at build time from build settings: the source `Info.plist` references
+`$(OKTA_ISSUER)` etc., `Config/AppConfig.xcconfig` supplies them (sentinel
+defaults plus an optional include of the gitignored
+`Config/Secrets.local.xcconfig` that `setup.sh` writes), and Xcode's
+`ProcessInfoPlistFile` bakes them in. Unset keys keep their sentinel
+`__OKTA_<KEY>_UNSET__`, so the build never hard-fails on a fresh clone:
 
 | Env var              | Info.plist key       | Sentinel                       |
 |----------------------|----------------------|--------------------------------|

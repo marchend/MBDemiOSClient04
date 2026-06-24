@@ -31,69 +31,28 @@ targets:
     dependencies:
       - package: OktaClient
         product: OktaDirectAuth
-    postBuildScripts:
-      # Build-time bridge: reads the four OKTA_* env vars from the
-      # calling process and writes them (or `__OKTA_<KEY>_UNSET__`
-      # sentinels when unset) into the BUILT Info.plist via
-      # `plutil -replace`. Why postBuild: at this point Xcode has
-      # already processed the source Info.plist into
-      # ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, so the script mutates
-      # the file that actually ships with the .app.
-      #
-      # Sandbox interaction: this phase writes a file OUTSIDE its
-      # default sandbox (the built Info.plist under TARGET_BUILD_DIR).
-      # We CANNOT narrow the grant by declaring the built Info.plist
-      # as `outputFiles` — Xcode's built-in ProcessInfoPlistFile task
-      # already declares that exact path as its own output, and two
-      # build commands declaring the same output is a hard
-      # "Multiple commands produce …" error that fails project
-      # validation before any source compiles. Instead we (a) declare
-      # a private stamp file under $(DERIVED_FILE_DIR) so Xcode has a
-      # real, unique output to track for this phase, and (b) disable
-      # user-script sandboxing on this target (settings.base below)
-      # so the script is permitted to write the built Info.plist.
-      # `alwaysOutOfDate: true` (XcodeGen 2.37+) marks the phase as
-      # always-dirty so Xcode runs it every build — necessary because
-      # env vars can change between builds without any input file
-      # changing, and a previous build's sentinel write would
-      # otherwise stick around.
-      #
-      # We invoke the script via `bash "$SRCROOT/Scripts/…"` rather
-      # than `path:` so the executable bit on the script file is
-      # irrelevant — `bash <file>` runs the contents regardless of
-      # mode bits, which is friendlier across a checkout that didn't
-      # preserve +x (e.g. zip downloads of the repo).
-      - name: "Inject Okta config into Info.plist"
-        script: |
-          bash "$SRCROOT/Scripts/inject_okta_config.sh"
-        inputFiles: []
-        outputFiles:
-          # Private stamp file — NOT the built Info.plist (see comment
-          # above re: ProcessInfoPlistFile collision). The script
-          # `touch`es this at the end so the declared output exists.
-          - $(DERIVED_FILE_DIR)/inject_okta_config.stamp
-        alwaysOutOfDate: true
+    # Okta / BFF config is supplied as build settings (Config/AppConfig.xcconfig,
+    # which optionally includes the gitignored Config/Secrets.local.xcconfig
+    # written by setup.sh) and expanded into the built Info.plist by Xcode's
+    # ProcessInfoPlistFile. This replaces a post-build script that mutated the
+    # built plist — that approach was racy (ProcessInfoPlistFile could re-run
+    # after it, e.g. after `xcodegen generate`, re-copying the sentinel source
+    # and forcing a manual Clean Build Folder). See Config/AppConfig.xcconfig.
+    configFiles:
+      Debug: Config/AppConfig.xcconfig
+      Release: Config/AppConfig.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.acmebank.mobile
         SWIFT_VERSION: "5.10"
-        # Custom Info.plist with the four OKTA_* keys plus the
-        # standard launch-screen / scene-manifest entries.
+        # Custom Info.plist carrying the OKTA_* / API_BASE_URL keys as
+        # $(VAR) references expanded from Config/AppConfig.xcconfig, plus
+        # the standard launch-screen / scene-manifest entries.
         # GENERATE_INFOPLIST_FILE only injects the Apple-defined
-        # `INFOPLIST_KEY_*` set; arbitrary keys (OKTA_*) require a
-        # real source plist + INFOPLIST_FILE.
+        # `INFOPLIST_KEY_*` set; arbitrary keys require a real source
+        # plist + INFOPLIST_FILE.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AcmeBank/Info.plist
-        # The Run Script phase above writes to the built Info.plist
-        # at ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, which lives
-        # OUTSIDE the script's default sandbox. The narrower fix
-        # (declaring the built Info.plist as `outputFiles`) is not
-        # available to us here because ProcessInfoPlistFile already
-        # claims that exact path as its output, and Xcode rejects
-        # duplicate outputs with "Multiple commands produce …".
-        # Disabling user-script sandboxing target-wide is the only
-        # remaining mechanism Xcode offers to grant the write.
-        ENABLE_USER_SCRIPT_SANDBOXING: NO
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_ENTITLEMENTS: AcmeBank/AcmeBank.entitlements
