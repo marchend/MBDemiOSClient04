@@ -24,7 +24,7 @@ public struct HomeDashboard: Equatable, Codable {
 /// send a pre-combined display name), so `displayName` is derived here.
 ///
 /// The optional `segment` field (`"segment"` in JSON) identifies the
-/// customer tier (e.g. `"PREMIER"`, `"STANDARD"`). It is omitted from
+/// customer tier (e.g. `"RETAIL"`, `"PREMIER"`). It is omitted from
 /// the BFF response for customers with no assigned segment, so the
 /// field is `Optional<CustomerSegment>`. `.convertFromSnakeCase` maps
 /// the JSON key `"segment"` directly to `segment` (no custom
@@ -67,16 +67,23 @@ public struct Customer: Equatable, Codable {
 /// Customer segment / tier as returned by the BFF (`segment` field).
 ///
 /// `RawRepresentable` with a `String` raw value so JSON strings map
-/// directly. The failable `init(from:)` falls back to `.unknown` for
-/// unrecognised server values — forward-compatible as the BFF adds new
-/// segment tiers. Raw values use the BFF's uppercase convention.
+/// directly. The cases mirror the BFF OpenAPI contract exactly —
+/// `segment: enum: [RETAIL, PREMIER, PRIVATE, BUSINESS]` — so every tier
+/// the backend can emit renders a badge.
 ///
-/// Only `.premier` and `.standard` have a visible badge; `.unknown`
-/// is intentionally hidden so unvetted future values don't render
-/// blank or nonsensical text on the card.
+/// NOTE: an earlier version used a non-existent `STANDARD` case and
+/// omitted `RETAIL` / `PRIVATE` / `BUSINESS`, so every `RETAIL` customer
+/// (the majority of the demo set — Bankuser One, Norm User) fell through
+/// to `.unknown` and showed no badge, while only the lone `PREMIER`
+/// customer rendered one. The failable `init(from:)` still falls back to
+/// `.unknown` for any value outside the contract (forward-compatible if
+/// the BFF adds a new tier), and `.unknown` is intentionally badge-less so
+/// an unvetted future value never renders blank or nonsensical text.
 public enum CustomerSegment: String, Equatable, Codable {
-    case premier  = "PREMIER"
-    case standard = "STANDARD"
+    case retail         = "RETAIL"
+    case premier        = "PREMIER"
+    case privateBanking = "PRIVATE"
+    case business       = "BUSINESS"
     case unknown
 
     /// Failable init that falls back to `.unknown` for unrecognised
@@ -88,13 +95,15 @@ public enum CustomerSegment: String, Equatable, Codable {
     }
 
     /// Human-readable display string for badge rendering.
-    /// Returns `nil` for `.unknown` so callers can choose not to
-    /// render a badge for unrecognised or empty segment values.
+    /// Returns `nil` for `.unknown` so callers don't render a badge for
+    /// unrecognised or empty segment values.
     public var badgeText: String? {
         switch self {
-        case .premier:  return "PREMIER"
-        case .standard: return "STANDARD"
-        case .unknown:  return nil
+        case .retail:         return "RETAIL"
+        case .premier:        return "PREMIER"
+        case .privateBanking: return "PRIVATE"
+        case .business:       return "BUSINESS"
+        case .unknown:        return nil
         }
     }
 }

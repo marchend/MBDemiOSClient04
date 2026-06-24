@@ -126,7 +126,7 @@ final class CustomerDecodingTests: XCTestCase {
           "last_name": "Turing",
           "email": "alan@acmebank.com",
           "phone_number": "+1-416-555-0300",
-          "segment": "STANDARD"
+          "segment": "RETAIL"
         }
         """)
 
@@ -134,7 +134,7 @@ final class CustomerDecodingTests: XCTestCase {
         let customer = home.customer
 
         XCTAssertEqual(customer.phoneNumber, "+1-416-555-0300")
-        XCTAssertEqual(customer.segment, .standard)
+        XCTAssertEqual(customer.segment, .retail)
         XCTAssertEqual(customer.displayName, "Alan Turing")
     }
 }

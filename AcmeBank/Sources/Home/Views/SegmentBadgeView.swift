@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A monochrome capsule badge that displays the customer's segment
-/// tier (e.g. `"PREMIER"`, `"STANDARD"`).
+/// tier (e.g. `"RETAIL"`, `"PREMIER"`).
 ///
 /// Rendered with a semi-transparent white background so it sits
 /// cleanly on the dark-navy `SignedInCardView` without introducing

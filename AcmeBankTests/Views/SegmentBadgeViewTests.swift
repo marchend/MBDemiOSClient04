@@ -52,17 +52,23 @@ final class SegmentBadgeViewTests: XCTestCase {
     /// Uppercase of an already-uppercase string is idempotent —
     /// a pre-uppercased input stores and renders identically.
     func test_segmentBadge_uppercaseInputStoredAsIs() {
-        let badge = SegmentBadgeView(segment: "STANDARD")
-        XCTAssertEqual(badge.segment, "STANDARD",
+        let badge = SegmentBadgeView(segment: "RETAIL")
+        XCTAssertEqual(badge.segment, "RETAIL",
                        "SegmentBadgeView stores the raw value; uppercased input is stored unchanged")
     }
 
     // MARK: - CustomerSegment — badgeText contract
 
     /// Known segments must return a non-nil `badgeText` for badge rendering.
+    /// Mirrors the BFF OpenAPI enum `[RETAIL, PREMIER, PRIVATE, BUSINESS]` —
+    /// every contract tier renders a badge. `RETAIL` is the regression case:
+    /// the majority of demo customers are RETAIL and previously showed no
+    /// badge because the enum lacked the case (fell through to `.unknown`).
     func test_customerSegment_knownSegmentsHaveBadgeText() {
+        XCTAssertEqual(CustomerSegment.retail.badgeText, "RETAIL")
         XCTAssertEqual(CustomerSegment.premier.badgeText, "PREMIER")
-        XCTAssertEqual(CustomerSegment.standard.badgeText, "STANDARD")
+        XCTAssertEqual(CustomerSegment.privateBanking.badgeText, "PRIVATE")
+        XCTAssertEqual(CustomerSegment.business.badgeText, "BUSINESS")
     }
 
     /// `.unknown` must return nil from `badgeText` so no badge is rendered
