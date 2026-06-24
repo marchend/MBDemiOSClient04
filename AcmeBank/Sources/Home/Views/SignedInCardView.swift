@@ -7,7 +7,12 @@ import SwiftUI
 /// - "SIGNED IN" label (small caps, light grey)
 /// - Circular avatar with the customer's initials
 /// - Full display name (bold white)
-/// - Auth row: shield SF Symbol + "Authenticated via Okta · Customer <id>"
+/// - Auth row: shield SF Symbol + "Authenticated via Okta · ···XXXX"
+///
+/// The `customerId` (Okta `sub` claim) is never rendered verbatim.
+/// Only the last four characters are shown, preceded by `···`, to
+/// avoid surfacing email prefixes, sequential integers, or other
+/// PII-adjacent values that some IdP configurations embed in `sub`.
 ///
 /// Zero green/red: the palette is strictly navy / white / grey.
 struct SignedInCardView: View {
@@ -39,14 +44,14 @@ struct SignedInCardView: View {
                 }
             }
 
-            // Okta auth row
+            // Okta auth row — masked customer ID (last 4 chars only)
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.shield")
                     .renderingMode(.template)
                     .foregroundColor(.white)
                     .font(.body)
 
-                Text("Authenticated via Okta \u{00B7} Customer \(customerId)")
+                Text("Authenticated via Okta \u{00B7} \(maskedCustomerId)")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.8))
             }
@@ -65,6 +70,16 @@ struct SignedInCardView: View {
         let parts = displayName.split(separator: " ")
         let letters = parts.prefix(2).compactMap { $0.first.map(String.init) }
         return letters.joined()
+    }
+
+    /// Returns a masked form of `customerId` that exposes only the last
+    /// four characters, e.g. `"user-abc123"` → `"···3123"`.
+    /// If the ID is four characters or shorter it is fully masked as
+    /// `"···"` to avoid exposing the entire value.
+    private var maskedCustomerId: String {
+        guard customerId.count > 4 else { return "\u{00B7}\u{00B7}\u{00B7}" }
+        let suffix = customerId.suffix(4)
+        return "\u{00B7}\u{00B7}\u{00B7}\(suffix)"
     }
 
     private var avatarView: some View {

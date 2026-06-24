@@ -210,6 +210,13 @@ struct HomeView: View {
     private func errorMessage(for error: HomeError) -> String {
         switch error {
         case .unauthorized:
+            // NOTE: This branch is intentionally unreachable in normal operation.
+            // `HomeViewModel.load()` handles `.unauthorized` by calling
+            // `clearKeychainAndSignOut()` which fires `onSignOut` and routes away
+            // before SwiftUI ever renders the error view. The case is kept here
+            // to keep the `switch` exhaustive — if the routing behaviour changes
+            // in the future, this string will be shown rather than silently falling
+            // through to a generic message.
             return "Your session has expired. Please sign in again."
         case .networkFailure:
             return "Couldn\u{2019}t reach Acme Bank. Please check your connection and try again."

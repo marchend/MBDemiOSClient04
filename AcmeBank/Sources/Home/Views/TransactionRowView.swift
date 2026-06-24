@@ -46,9 +46,7 @@ struct TransactionRowView: View {
     }
 
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: transaction.date)
+        Self.dateFormatter.string(from: transaction.date)
     }
 
     private var avatarView: some View {
@@ -61,6 +59,19 @@ struct TransactionRowView: View {
                 .foregroundColor(.primary)
         }
     }
+
+    // MARK: - Static formatter cache
+
+    /// `DateFormatter` is expensive to initialise — creating one per
+    /// row in a scrolling list causes measurable jank on device.
+    /// A single static instance shared across all `TransactionRowView`
+    /// renders is sufficient because `string(from:)` is thread-safe
+    /// once the formatter's properties are fixed.
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
 }
 
 // MARK: - Preview
