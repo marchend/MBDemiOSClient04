@@ -17,18 +17,17 @@ import XCTest
 /// showing the banner, `SignInFlowUITests` XCTSkips. No crash, no
 /// hard-fail."
 ///
-/// The sentinel check is necessary because xcodebuild ALWAYS forwards
-/// the process env into the runner subprocess \u2014 so an env var set on
-/// the CI runner host but NOT exported into the xcodebuild invocation
-/// would set `ProcessInfo.environment["OKTA_ISSUER"]` here (test
-/// process) WITHOUT having injected a real value into the built
-/// Info.plist (which happens at compile time inside xcodebuild). The
-/// sentinel check is what catches that mismatch and skips rather
-/// than fights through a sign-in that can never succeed.
+/// The sentinel check is necessary because the built Info.plist values
+/// come from `Config/Secrets.local.xcconfig` (which `setup.sh` writes
+/// from the OKTA_* env), NOT from the env at build time \u2014 so an env var
+/// present in this test process does not by itself prove the built
+/// Info.plist holds a real value. The sentinel check catches a
+/// sentinel-configured build and skips rather than fighting through a
+/// sign-in that can never succeed.
 final class SignInFlowUITests: XCTestCase {
 
-    /// Env-var names the live build script consumes. Mirrors
-    /// `Scripts/inject_okta_config.sh`.
+    /// Env-var names that feed the build-time Info.plist config
+    /// (setup.sh -> Config/Secrets.local.xcconfig -> ProcessInfoPlistFile).
     private static let buildEnvVars = [
         "OKTA_ISSUER",
         "OKTA_CLIENT_ID",
@@ -44,9 +43,9 @@ final class SignInFlowUITests: XCTestCase {
     ]
 
     /// True iff every named env var is present and non-empty in this
-    /// process. The build script's sentinel-injection path means an
-    /// absent env var here is the same as a sentinel value in the
-    /// built Info.plist \u2014 either way, sign-in cannot work.
+    /// process. An absent env var here means setup.sh had nothing to
+    /// write for that key, so the built Info.plist carries its sentinel
+    /// default \u2014 either way, sign-in cannot work.
     private static func allEnvVarsPresent(_ names: [String]) -> Bool {
         let env = ProcessInfo.processInfo.environment
         return names.allSatisfy { (env[$0] ?? "").isEmpty == false }

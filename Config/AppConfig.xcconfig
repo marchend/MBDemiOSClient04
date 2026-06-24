@@ -1,0 +1,24 @@
+// AppConfig.xcconfig — Okta / BFF configuration baked into the built
+// Info.plist at build time.
+//
+// The source Info.plist references these as $(OKTA_ISSUER), $(API_BASE_URL),
+// etc. Xcode's ProcessInfoPlistFile expands build settings when it processes
+// the plist (`-expandbuildsettings`), so the values are produced by the SAME
+// task that creates the plist — they survive every build, clean OR
+// incremental, with no Run Script to be clobbered. (A post-build script that
+// mutates the built plist is racy: ProcessInfoPlistFile can re-run after it —
+// e.g. after `xcodegen generate` — and re-copy the source, which is the
+// "needs a Clean Build Folder every time" bug this replaces.)
+//
+// These committed defaults are sentinels so a fresh clone (or CI with no
+// secrets) still compiles and runs, degrading gracefully to "not configured"
+// (OktaConfig / BFFHomeRepository detect the __*_UNSET__ values at runtime).
+OKTA_ISSUER = __OKTA_ISSUER_UNSET__
+OKTA_CLIENT_ID = __OKTA_CLIENT_ID_UNSET__
+OKTA_REDIRECT_URI = __OKTA_REDIRECT_URI_UNSET__
+OKTA_SCOPES = __OKTA_SCOPES_UNSET__
+API_BASE_URL = __API_BASE_URL_UNSET__
+
+// Local overrides (gitignored, written by setup.sh from the OKTA_* env /
+// launchctl). `#include?` is optional — no error when the file is absent.
+#include? "Secrets.local.xcconfig"
