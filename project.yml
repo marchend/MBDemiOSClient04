@@ -112,15 +112,20 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      # Broad glob picks up the existing AcmeBankUITests.swift today.
-      # SignInFlowUITests.swift arrives in a later PR of this story;
-      # pre-register the explicit path with `optional: true` so the
-      # glob is wired now and no second project.yml edit is required
-      # when the file lands. XcodeGen tolerates the absent file at
-      # generation time when `optional: true` is set.
+      # Broad directory glob picks up every .swift file under
+      # AcmeBankUITests/ automatically. When SignInFlowUITests.swift
+      # lands in a later PR of this story it will be wired in by
+      # this same glob with no project.yml edit required.
+      #
+      # Do NOT pre-register a not-yet-existent file with an explicit
+      # `- path: AcmeBankUITests/SignInFlowUITests.swift` + `optional: true`
+      # entry: XcodeGen's `optional: true` only suppresses the
+      # generation-time "file missing" error — the explicit path is
+      # still written into the generated .xcodeproj as a build input,
+      # and xcodebuild then fails at compile time with
+      # "Build input file cannot be found" because the .swift file
+      # is absent on disk.
       - path: AcmeBankUITests
-      - path: AcmeBankUITests/SignInFlowUITests.swift
-        optional: true
     dependencies:
       - target: AcmeBank
     settings:
