@@ -38,37 +38,47 @@ public final class StubHomeRepository: HomeRepositoryProtocol {
     public static let bankuserOneFixture: HomeDashboard = {
         let customer = Customer(
             id: "cust-001",
-            displayName: "Alex Bankuser",
-            email: "bankuser.one@acmebank.com"
+            firstName: "Alex",
+            lastName: "Bankuser",
+            email: "bankuser.one@acmebank.com",
+            phoneNumber: "+1-416-555-0142"
         )
 
         let checking = Account(
             id: "acct-001",
-            accountNumber: "****1234",
-            accountType: .checking,
+            name: "Unlimited Chequing",
+            maskedNumber: "1234",
             balance: Decimal(string: "2450.75")!,
-            currency: "USD"
+            availableBalance: Decimal(string: "2450.75")!,
+            type: .chequing,
+            currencyCode: "USD"
         )
         let savings = Account(
             id: "acct-002",
-            accountNumber: "****5678",
-            accountType: .savings,
+            name: "High-Interest Savings",
+            maskedNumber: "5678",
             balance: Decimal(string: "12000.00")!,
-            currency: "USD"
+            availableBalance: Decimal(string: "12000.00")!,
+            type: .savings,
+            currencyCode: "USD"
         )
         let credit = Account(
             id: "acct-003",
-            accountNumber: "****9012",
-            accountType: .credit,
+            name: "Rewards Credit Card",
+            maskedNumber: "9012",
             balance: Decimal(string: "-450.25")!,
-            currency: "USD"
+            availableBalance: Decimal(string: "4549.75")!,
+            type: .credit,
+            currencyCode: "USD"
         )
         let investment = Account(
             id: "acct-004",
-            accountNumber: "****3456",
-            accountType: .investment,
+            name: "Growth Investment",
+            maskedNumber: "3456",
             balance: Decimal(string: "45000.00")!,
-            currency: "USD"
+            availableBalance: Decimal(string: "45000.00")!,
+            type: .investment,
+            currencyCode: "USD"
         )
 
         // Use a known fixed date so assertions against fixture data
@@ -79,24 +89,21 @@ public final class StubHomeRepository: HomeRepositoryProtocol {
             accountId: "acct-001",
             description: "Coffee Shop",
             amount: Decimal(string: "-4.50")!,
-            currency: "USD",
-            date: baseDate
+            postedDate: baseDate
         )
         let tx2 = Transaction(
             id: "tx-002",
             accountId: "acct-001",
             description: "Payroll Deposit",
             amount: Decimal(string: "3200.00")!,
-            currency: "USD",
-            date: Date(timeIntervalSince1970: 1_699_990_000)
+            postedDate: Date(timeIntervalSince1970: 1_699_990_000)
         )
         let tx3 = Transaction(
             id: "tx-003",
             accountId: "acct-002",
             description: "Transfer to Savings",
             amount: Decimal(string: "-500.00")!,
-            currency: "USD",
-            date: Date(timeIntervalSince1970: 1_699_980_000)
+            postedDate: Date(timeIntervalSince1970: 1_699_980_000)
         )
 
         return HomeDashboard(

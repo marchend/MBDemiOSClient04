@@ -2,13 +2,14 @@ import Foundation
 
 /// Top-level response from `GET /v1/home`.
 ///
-/// All value types; Codable via `.convertFromSnakeCase` so field names
-/// like `account_number` and `display_name` decode automatically from
-/// the BFF's snake_case JSON without custom `CodingKeys`.
+/// All value types; Codable via `.convertFromSnakeCase` so the BFF's
+/// snake_case field names (`recent_transactions`, `masked_number`,
+/// `posted_date`, …) decode automatically into these camelCase
+/// properties without custom `CodingKeys`.
 public struct HomeDashboard: Equatable, Codable {
     public let customer: Customer
     public let accounts: [Account]
-    public let recentTransactions: [Transaction]
+    public let recentTransactions: [Transaction]   // recent_transactions
 
     public init(customer: Customer, accounts: [Account], recentTransactions: [Transaction]) {
         self.customer = customer
@@ -18,49 +19,77 @@ public struct HomeDashboard: Equatable, Codable {
 }
 
 /// Customer profile included in the home response.
+///
+/// The BFF sends `first_name` + `last_name` separately (it does not
+/// send a pre-combined display name), so `displayName` is derived here.
 public struct Customer: Equatable, Codable {
     public let id: String
-    public let displayName: String
+    public let firstName: String       // first_name
+    public let lastName: String        // last_name
     public let email: String
+    public let phoneNumber: String?    // phone_number (nullable)
 
-    public init(id: String, displayName: String, email: String) {
+    public init(
+        id: String,
+        firstName: String,
+        lastName: String,
+        email: String,
+        phoneNumber: String? = nil
+    ) {
         self.id = id
-        self.displayName = displayName
+        self.firstName = firstName
+        self.lastName = lastName
         self.email = email
+        self.phoneNumber = phoneNumber
+    }
+
+    /// Full name for display, derived from `firstName` + `lastName`.
+    /// Falls back to `email` if both name parts are blank.
+    public var displayName: String {
+        let full = "\(firstName) \(lastName)"
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return full.isEmpty ? email : full
     }
 }
 
 /// A single bank account belonging to the customer.
 public struct Account: Equatable, Codable {
     public let id: String
-    public let accountNumber: String
-    public let accountType: AccountType
+    public let name: String                // friendly name, e.g. "Unlimited Chequing"
+    public let maskedNumber: String        // masked_number, e.g. "4821"
     public let balance: Decimal
-    public let currency: String
+    public let availableBalance: Decimal   // available_balance
+    public let type: AccountType
+    public let currencyCode: String        // currency_code
 
     public init(
         id: String,
-        accountNumber: String,
-        accountType: AccountType,
+        name: String,
+        maskedNumber: String,
         balance: Decimal,
-        currency: String
+        availableBalance: Decimal,
+        type: AccountType,
+        currencyCode: String
     ) {
         self.id = id
-        self.accountNumber = accountNumber
-        self.accountType = accountType
+        self.name = name
+        self.maskedNumber = maskedNumber
         self.balance = balance
-        self.currency = currency
+        self.availableBalance = availableBalance
+        self.type = type
+        self.currencyCode = currencyCode
     }
 }
 
-/// Account type as returned by the BFF.
+/// Account type as returned by the BFF (`type` field).
 ///
 /// `RawRepresentable` with a `String` raw value so JSON strings map
-/// directly. The failable `init(rawValue:)` falls back to `.unknown`
-/// for unrecognised server values — forward-compatible as the BFF adds
-/// new account types.
+/// directly. The failable `init(from:)` falls back to `.unknown` for
+/// unrecognised server values — forward-compatible as the BFF adds new
+/// account types. Note the raw value is `chequing` (CA spelling), to
+/// match the BFF enum `[chequing, savings, credit, investment]`.
 public enum AccountType: String, Equatable, Codable {
-    case checking
+    case chequing
     case savings
     case credit
     case investment
@@ -76,27 +105,33 @@ public enum AccountType: String, Equatable, Codable {
 }
 
 /// A single transaction belonging to an account.
+///
+/// The BFF does not send a per-transaction currency; amounts render in
+/// the owning account's currency (USD across the demo dataset).
 public struct Transaction: Equatable, Codable {
     public let id: String
-    public let accountId: String
+    public let accountId: String           // account_id
     public let description: String
     public let amount: Decimal
-    public let currency: String
-    public let date: Date
+    public let postedDate: Date            // posted_date (iso8601)
+    public let category: String?           // nullable
+    public let merchantName: String?       // merchant_name (nullable)
 
     public init(
         id: String,
         accountId: String,
         description: String,
         amount: Decimal,
-        currency: String,
-        date: Date
+        postedDate: Date,
+        category: String? = nil,
+        merchantName: String? = nil
     ) {
         self.id = id
         self.accountId = accountId
         self.description = description
         self.amount = amount
-        self.currency = currency
-        self.date = date
+        self.postedDate = postedDate
+        self.category = category
+        self.merchantName = merchantName
     }
 }

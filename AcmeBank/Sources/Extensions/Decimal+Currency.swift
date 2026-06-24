@@ -24,18 +24,6 @@ extension Decimal {
         return formatted
     }
 
-    /// Returns a currency-formatted string for the absolute value of
-    /// this `Decimal`, without any sign prefix.
-    ///
-    /// Useful for displaying the "available balance" subtext beside a
-    /// negative balance row: e.g. `"$4,756.90 available"`.
-    func formattedAbsolute(currencyCode: String) -> String {
-        let formatter = Self.currencyFormatter(currencyCode: currencyCode)
-
-        let absoluteValue = self < 0 ? -self : self
-        return formatter.string(from: absoluteValue as NSDecimalNumber) ?? "\(absoluteValue)"
-    }
-
     // MARK: - Private formatter cache
 
     /// `NumberFormatter` instances are expensive to allocate — each one
