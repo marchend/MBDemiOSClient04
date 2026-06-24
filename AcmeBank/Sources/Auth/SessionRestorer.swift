@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 /// Cold-launch refresh-token reuse.
 ///
@@ -19,10 +18,14 @@ import UIKit
 /// is to either return a fresh `UserSession` or throw a meaningful
 /// reason.
 ///
-/// SDK isolation: this file imports nothing Okta-specific. The auth
-/// seam is the neutral `OktaAuthenticating` protocol, so tests inject
-/// a fake without ever touching the real SDK (per the prior lesson
-/// "Put the IdP SDK behind a NEUTRAL protocol seam").
+/// SDK isolation: this file imports nothing Okta-specific AND nothing
+/// platform-framework-specific. The auth seam is the neutral
+/// `OktaAuthenticating` protocol, so tests inject a fake without ever
+/// touching the real SDK (per the prior lesson "Put the IdP SDK
+/// behind a NEUTRAL protocol seam"). The device-name value is
+/// likewise passed in by the caller rather than read here, which
+/// keeps this file free of `UIKit` and lets the type compile on
+/// macOS / in a Swift Package test target.
 public enum SessionRestorer {
     /// Restore a `UserSession` from a previously persisted refresh
     /// token.
@@ -32,10 +35,12 @@ public enum SessionRestorer {
     ///   - authClient: the auth-protocol seam. Production callers pass
     ///     the live `OktaDirectAuthClient`; tests inject a scriptable
     ///     fake.
-    ///   - deviceName: closure returning the current device name. The
-    ///     production default reads `UIDevice.current.name`; tests
-    ///     pass a deterministic string so a CI runner's host name
-    ///     doesn't leak into the assertion surface.
+    ///   - deviceName: the current device name, captured at the call
+    ///     site. The production call site (`AcmeBankApp`) passes
+    ///     `UIDevice.current.name`; tests pass a deterministic string
+    ///     so a CI runner's host name doesn't leak into the assertion
+    ///     surface. Required (no default) so this file does not have
+    ///     to import `UIKit`.
     /// - Returns: a fresh `UserSession` populated from the new ID
     ///   token's claims and the new access token.
     /// - Throws: `AuthError.malformedToken` if the refresh response
@@ -45,7 +50,7 @@ public enum SessionRestorer {
     public static func restore(
         refreshToken: String,
         authClient: OktaAuthenticating,
-        deviceName: @autoclosure () -> String = UIDevice.current.name
+        deviceName: String
     ) async throws -> UserSession {
         let tokens = try await authClient.refresh(refreshToken: refreshToken)
 
@@ -70,7 +75,7 @@ public enum SessionRestorer {
             email: claims.email ?? "",
             accessToken: tokens.accessToken,
             authTimestamp: claims.auth_time ?? Date(),
-            deviceName: deviceName()
+            deviceName: deviceName
         )
     }
 }

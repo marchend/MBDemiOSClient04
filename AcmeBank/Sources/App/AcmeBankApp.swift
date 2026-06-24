@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// App composition root.
 ///
@@ -44,13 +45,23 @@ struct AcmeBankApp: App {
                     LandingView(session: session)
                 } else {
                     LoginView(viewModel: loginViewModel)
-                        // Promote a successful Direct-Auth sign-in
-                        // (published as `LoginViewModel.session`) into
-                        // our root-level `session` state so the next
-                        // SwiftUI body evaluation swaps in LandingView.
-                        .onReceive(loginViewModel.$session.compactMap { $0 }) { newSession in
-                            session = newSession
-                        }
+                }
+            }
+            // Promote a successful Direct-Auth sign-in (published as
+            // `LoginViewModel.session`) into our root-level `session`
+            // state so the next SwiftUI body evaluation swaps in
+            // LandingView. Attached to the outer `Group` rather than
+            // to `LoginView` so the subscription's lifetime matches
+            // the scene root, not the (transient) LoginView instance.
+            // This matters once a sign-out flow ships: a Landing \u2192
+            // Login \u2192 Landing round trip will keep observing this
+            // publisher continuously, instead of tearing the
+            // subscription down and re-creating it (and possibly
+            // missing a publish that arrived during the layout pass
+            // before the modifier re-attaches).
+            .onChange(of: loginViewModel.session) { newSession in
+                if let newSession {
+                    session = newSession
                 }
             }
             .task {
@@ -68,10 +79,19 @@ struct AcmeBankApp: App {
     ///   3. `OktaConfig` is `.configured` \u2014 no point calling the SDK
     ///      with sentinel issuer / client id.
     ///
-    /// On any throw from `SessionRestorer.restore(...)` we clear the
-    /// stale tokens and stay on Login. We deliberately don't surface
-    /// the failure as an error banner: this is a silent best-effort
-    /// background path, and the user is about to see Login anyway.
+    /// On a `SessionRestorer.restore(...)` throw we differentiate by
+    /// the typed `AuthError`: errors that prove the token itself is
+    /// no longer useful (`.invalidCredentials`, `.malformedToken`,
+    /// `.notConfigured`) clear the keychain so the next launch
+    /// doesn't burn another round trip on a known-bad value; transient
+    /// failures (`.network`, `.mfaRequired`, or any non-typed throw)
+    /// preserve the token so a flaky connection \u2014 or a staged auth
+    /// client whose `refresh(...)` implementation is not yet live \u2014
+    /// does NOT silently purge a valid "Keep me signed in" token from
+    /// the keychain on first cold launch. We deliberately don't
+    /// surface the failure as an error banner: this is a silent
+    /// best-effort background path, and the user is about to see
+    /// Login anyway.
     @MainActor
     private func attemptColdStartRestore() async {
         guard !didAttemptRestore else { return }
@@ -98,19 +118,58 @@ struct AcmeBankApp: App {
             return
         }
 
-        let authClient = OktaDirectAuthClient(config: config)
+        await attemptColdStartRestore(
+            refreshToken: refreshToken,
+            authClient: OktaDirectAuthClient(config: config),
+            tokenStore: tokenStore,
+            deviceName: UIDevice.current.name
+        )
+    }
+
+    /// Injection seam for the restore path. The public entrypoint
+    /// above hard-constructs the production `OktaDirectAuthClient`;
+    /// this overload takes the auth client (and token store) as
+    /// parameters so the implementation can be swapped without
+    /// touching the SwiftUI surface. Keeping the construction at the
+    /// caller also makes the "is the live refresh path actually
+    /// implemented?" decision explicit at the call site rather than
+    /// buried inside a helper.
+    @MainActor
+    private func attemptColdStartRestore(
+        refreshToken: String,
+        authClient: OktaAuthenticating,
+        tokenStore: KeychainTokenStore,
+        deviceName: String
+    ) async {
         do {
             let restored = try await SessionRestorer.restore(
                 refreshToken: refreshToken,
-                authClient: authClient
+                authClient: authClient,
+                deviceName: deviceName
             )
             session = restored
+        } catch let error as AuthError {
+            switch error {
+            case .invalidCredentials, .malformedToken, .notConfigured:
+                // The IdP / decoder has told us the persisted token
+                // is no longer useful. Clear it so the NEXT cold
+                // launch doesn't burn another round trip on a
+                // known-bad value.
+                try? tokenStore.clearAll()
+            case .network, .mfaRequired:
+                // Transient or non-token-fatal. Crucially this also
+                // covers the staged `OktaDirectAuthClient.refresh`
+                // stub (which unconditionally throws `.network` until
+                // the AuthFoundation call site lands): a partially
+                // implemented refresh path will NOT silently wipe a
+                // valid "Keep me signed in" token on first launch.
+                // The user just falls through to Login this time.
+                break
+            }
         } catch {
-            // Any failure \u2014 network, IdP-rejected stale refresh,
-            // malformed response \u2014 means the persisted token is no
-            // longer useful. Clear it so the NEXT cold launch doesn't
-            // burn another round trip on the same stale value.
-            try? tokenStore.clearAll()
+            // Non-typed throw \u2014 we don't know whether the token is
+            // actually bad. Preserve it; the user re-signs-in this
+            // launch and we retry on the next cold start.
         }
     }
 }
