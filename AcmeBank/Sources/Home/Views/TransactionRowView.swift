@@ -12,6 +12,10 @@ struct TransactionRowView: View {
 
     let transaction: Transaction
 
+    /// The BFF does not send a per-transaction currency; the demo
+    /// dataset is uniformly USD, so amounts render in USD.
+    private static let displayCurrency = "USD"
+
     // MARK: - Body
 
     var body: some View {
@@ -32,7 +36,7 @@ struct TransactionRowView: View {
 
             Spacer()
 
-            Text(transaction.amount.formatted(currencyCode: transaction.currency))
+            Text(transaction.amount.formatted(currencyCode: Self.displayCurrency))
                 .font(.body.monospacedDigit())
                 .foregroundColor(.primary)
         }
@@ -46,7 +50,7 @@ struct TransactionRowView: View {
     }
 
     private var formattedDate: String {
-        Self.dateFormatter.string(from: transaction.date)
+        Self.dateFormatter.string(from: transaction.postedDate)
     }
 
     private var avatarView: some View {
@@ -84,8 +88,7 @@ struct TransactionRowView: View {
                 accountId: "a1",
                 description: "Starbucks Coffee",
                 amount: Decimal(string: "-5.75")!,
-                currency: "USD",
-                date: Date()
+                postedDate: Date()
             )
         )
         TransactionRowView(
@@ -94,8 +97,7 @@ struct TransactionRowView: View {
                 accountId: "a1",
                 description: "Payroll Deposit",
                 amount: Decimal(string: "3200.00")!,
-                currency: "USD",
-                date: Date()
+                postedDate: Date()
             )
         )
     }

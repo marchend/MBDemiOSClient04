@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Layout:
 /// - Left: dark rounded-square icon tile (SF Symbol on navy tile)
-/// - Middle: account name + account number (subtitle)
+/// - Middle: account name + masked number (subtitle)
 /// - Right: balance formatted via `Decimal.formatted(currencyCode:)`
 ///   with `\u{2212}` prefix for negatives; negative rows additionally
 ///   show `"<available> available"` subtext.
@@ -22,10 +22,10 @@ struct AccountRowView: View {
                 .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(account.accountType.displayName)
+                Text(account.name)
                     .font(.body)
                     .foregroundColor(.primary)
-                Text(account.accountNumber)
+                Text("\u{00B7}\u{00B7}\u{00B7}\u{00B7} \(account.maskedNumber)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -33,15 +33,15 @@ struct AccountRowView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(account.balance.formatted(currencyCode: account.currency))
+                Text(account.balance.formatted(currencyCode: account.currencyCode))
                     .font(.body.monospacedDigit())
                     .foregroundColor(.primary)
 
                 if account.balance < 0 {
-                    // Show absolute available balance as subtext when
-                    // balance is negative (e.g. credit card owing).
+                    // Show available balance as subtext when the balance
+                    // is negative (e.g. credit card owing).
                     // Never red — plain secondary style.
-                    Text("\(account.balance.formattedAbsolute(currencyCode: account.currency)) available")
+                    Text("\(account.availableBalance.formatted(currencyCode: account.currencyCode)) available")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -56,7 +56,7 @@ struct AccountRowView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.acmeBrandNavy)
-            Image(systemName: accountTypeIcon(account.accountType))
+            Image(systemName: accountTypeIcon(account.type))
                 .font(.system(size: 20, weight: .medium))
                 .foregroundColor(.white)
         }
@@ -68,26 +68,12 @@ struct AccountRowView: View {
         switch type {
         case .credit:
             return "creditcard"
-        case .checking, .savings:
+        case .chequing, .savings:
             return "banknote"
         case .investment:
             return "chart.line.uptrend.xyaxis"
         case .unknown:
             return "dollarsign.circle"
-        }
-    }
-}
-
-// MARK: - AccountType display name
-
-private extension AccountType {
-    var displayName: String {
-        switch self {
-        case .checking:   return "Chequing"
-        case .savings:    return "Savings"
-        case .credit:     return "Credit"
-        case .investment: return "Investment"
-        case .unknown:    return "Account"
         }
     }
 }
@@ -99,28 +85,34 @@ private extension AccountType {
         AccountRowView(
             account: Account(
                 id: "1",
-                accountNumber: "****1234",
-                accountType: .checking,
+                name: "Unlimited Chequing",
+                maskedNumber: "1234",
                 balance: Decimal(string: "5200.50")!,
-                currency: "USD"
+                availableBalance: Decimal(string: "5200.50")!,
+                type: .chequing,
+                currencyCode: "USD"
             )
         )
         AccountRowView(
             account: Account(
                 id: "2",
-                accountNumber: "****5678",
-                accountType: .credit,
+                name: "Rewards Credit Card",
+                maskedNumber: "5678",
                 balance: Decimal(string: "-243.10")!,
-                currency: "USD"
+                availableBalance: Decimal(string: "4756.90")!,
+                type: .credit,
+                currencyCode: "USD"
             )
         )
         AccountRowView(
             account: Account(
                 id: "3",
-                accountNumber: "****9012",
-                accountType: .investment,
+                name: "Growth Investment",
+                maskedNumber: "9012",
                 balance: Decimal(string: "12345.00")!,
-                currency: "USD"
+                availableBalance: Decimal(string: "12345.00")!,
+                type: .investment,
+                currencyCode: "USD"
             )
         )
     }
