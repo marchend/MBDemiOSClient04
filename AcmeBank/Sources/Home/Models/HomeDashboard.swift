@@ -22,25 +22,35 @@ public struct HomeDashboard: Equatable, Codable {
 ///
 /// The BFF sends `first_name` + `last_name` separately (it does not
 /// send a pre-combined display name), so `displayName` is derived here.
+///
+/// The optional `segment` field (`"segment"` in JSON) identifies the
+/// customer tier (e.g. `"PREMIER"`, `"STANDARD"`). It is omitted from
+/// the BFF response for customers with no assigned segment, so the
+/// field is `Optional<String>`.  `.convertFromSnakeCase` maps the
+/// JSON key `"segment"` directly to `segment` (no custom `CodingKeys`
+/// required).
 public struct Customer: Equatable, Codable {
     public let id: String
     public let firstName: String       // first_name
     public let lastName: String        // last_name
     public let email: String
     public let phoneNumber: String?    // phone_number (nullable)
+    public let segment: String?        // customer tier, e.g. "PREMIER" (nullable)
 
     public init(
         id: String,
         firstName: String,
         lastName: String,
         email: String,
-        phoneNumber: String? = nil
+        phoneNumber: String? = nil,
+        segment: String? = nil
     ) {
         self.id = id
         self.firstName = firstName
         self.lastName = lastName
         self.email = email
         self.phoneNumber = phoneNumber
+        self.segment = segment
     }
 
     /// Full name for display, derived from `firstName` + `lastName`.

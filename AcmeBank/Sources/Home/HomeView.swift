@@ -97,10 +97,11 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
 
-                // Signed-in identity card
+                // Signed-in identity card (passes segment for badge rendering)
                 SignedInCardView(
                     displayName: dashboard.customer.displayName,
-                    customerId: dashboard.customer.id
+                    customerId: dashboard.customer.id,
+                    segment: dashboard.customer.segment
                 )
                 .padding(.horizontal, 20)
 
