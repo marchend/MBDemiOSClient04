@@ -36,6 +36,14 @@ public enum KeychainError: Error, Equatable {
 /// environment CI uses; without it `SecItemAdd` returns
 /// `errSecMissingEntitlement` (-34018) and the whole test bundle goes
 /// red. (See AGENT.md "Keychain note for future feature agents".)
+///
+/// On Xcode 26.3 / iOS 18.5 simulators, opting into the data-protection
+/// keychain is necessary but no longer sufficient — `SecItemAdd` also
+/// requires `kSecAttrAccessible` on the add query, otherwise it still
+/// returns -34018. We set
+/// `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (standard for
+/// non-shareable auth tokens). `load`/`delete` queries match on
+/// service+account alone and do not need this attribute.
 public final class KeychainTokenStore: TokenStore {
     /// Service strings the production app uses. Tests construct a
     /// store with custom prefixes to isolate per-test items.
@@ -103,6 +111,7 @@ public final class KeychainTokenStore: TokenStore {
             kSecAttrService as String:            service,
             kSecAttrAccount as String:            Self.account,
             kSecValueData as String:              data,
+            kSecAttrAccessible as String:         kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecUseDataProtectionKeychain as String: true
         ]
         let status = SecItemAdd(attrs as CFDictionary, nil)
