@@ -3,20 +3,68 @@ options:
   bundleIdPrefix: com.acmebank
   deploymentTarget:
     iOS: "17.0"
+packages:
+  # Pin okta-mobile-swift to the 2.x major (bootstrap spec). `from:`
+  # is the version-requirement form xcodegen accepts — bare
+  # `minVersion` errors with "Unknown package requirement" before any
+  # compile reaches xcodebuild. Resolved version is captured in
+  # Package.resolved on first SPM resolve.
+  OktaClient:
+    url: https://github.com/okta/okta-mobile-swift
+    from: 2.0.0
 targets:
   AcmeBank:
     type: application
     platform: iOS
     sources:
+      # Broad glob picks up App/, Features/, DesignSystem/, Resources/,
+      # AcmeBank.entitlements, PrivacyInfo.xcprivacy, AND the new
+      # Sources/Auth + Sources/Landing trees added in this and
+      # subsequent story PRs. Sources/Landing/ ships in a later PR
+      # but is covered automatically by this directory glob — no
+      # second project.yml edit needed when those files arrive.
       - path: AcmeBank
+        excludes:
+          # Info.plist is referenced via INFOPLIST_FILE, not as a
+          # resource — exclude so it isn't double-bundled.
+          - Info.plist
+    dependencies:
+      - package: OktaClient
+        product: OktaDirectAuth
+    postBuildScripts:
+      # Build-time bridge: reads the four OKTA_* env vars from the
+      # calling process and writes them (or `__OKTA_<KEY>_UNSET__`
+      # sentinels when unset) into the BUILT Info.plist via
+      # `plutil -replace`. Why postBuild: at this point Xcode has
+      # already processed the source Info.plist into
+      # ${TARGET_BUILD_DIR}/${INFOPLIST_PATH}, so the script mutates
+      # the file that actually ships with the .app. Empty
+      # inputFiles/outputFiles so Xcode runs this phase EVERY build
+      # — otherwise an unchanged env var would let Xcode skip the
+      # phase even though the previous build wrote sentinels we now
+      # need to overwrite (or vice-versa).
+      #
+      # We invoke the script via `bash "$SRCROOT/Scripts/…"` rather
+      # than `path:` so the executable bit on the script file is
+      # irrelevant — `bash <file>` runs the contents regardless of
+      # mode bits, which is friendlier across a checkout that didn't
+      # preserve +x (e.g. zip downloads of the repo).
+      - name: "Inject Okta config into Info.plist"
+        script: |
+          bash "$SRCROOT/Scripts/inject_okta_config.sh"
+        inputFiles: []
+        outputFiles: []
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.acmebank.mobile
         SWIFT_VERSION: "5.10"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_CFBundleDisplayName: AcmeBank
+        # Custom Info.plist with the four OKTA_* keys plus the
+        # standard launch-screen / scene-manifest entries.
+        # GENERATE_INFOPLIST_FILE only injects the Apple-defined
+        # `INFOPLIST_KEY_*` set; arbitrary keys (OKTA_*) require a
+        # real source plist + INFOPLIST_FILE.
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AcmeBank/Info.plist
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_ENTITLEMENTS: AcmeBank/AcmeBank.entitlements
@@ -35,7 +83,16 @@ targets:
   AcmeBankUITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [AcmeBankUITests]
+    sources:
+      # Broad glob picks up the existing AcmeBankUITests.swift today.
+      # SignInFlowUITests.swift arrives in a later PR of this story;
+      # pre-register the explicit path with `optional: true` so the
+      # glob is wired now and no second project.yml edit is required
+      # when the file lands. XcodeGen tolerates the absent file at
+      # generation time when `optional: true` is set.
+      - path: AcmeBankUITests
+      - path: AcmeBankUITests/SignInFlowUITests.swift
+        optional: true
     dependencies:
       - target: AcmeBank
     settings:
@@ -48,7 +105,9 @@ schemes:
       targets:
         AcmeBank: all
     test:
+      # `test.targets` entries use the bare `- name:` form — the
+      # `- target:` form is rejected by xcodegen's scheme schema.
       targets:
-        - AcmeBankTests
-        - AcmeBankUITests
+        - name: AcmeBankTests
+        - name: AcmeBankUITests
       parallelizable: false

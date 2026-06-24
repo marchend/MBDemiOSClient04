@@ -13,7 +13,7 @@ features are deferred to subsequent story PRs.
 | Language | Swift 5.10 |
 | UI Framework | SwiftUI (`@main App`, `WindowGroup`, `NavigationStack`) |
 | Architecture | MVVM + Coordinator |
-| Auth | Okta OIDC via `okta-mobile-swift` (deferred) |
+| Auth | Okta OIDC via `okta-mobile-swift` 2.x (`OktaDirectAuth` product) |
 | Networking | `URLSession` + async/await (deferred) |
 | DI | Constructor injection; no service locator |
 | Project file | XcodeGen `project.yml` — never hand-edit `.xcodeproj` |
@@ -45,20 +45,28 @@ xcodebuild test \
 
 ## Key Directory Structure
 
-### Current (bootstrap)
+### Current (bootstrap + Auth scaffold)
 ```
 project.yml                  ← XcodeGen spec (source of truth)
 setup.sh                     ← one-shot post-clone setup
+Scripts/
+  inject_okta_config.sh      ← build-time OKTA_* env → Info.plist (postBuildScript)
 AcmeBank/
+  Info.plist                 ← source plist with OKTA_* sentinel keys
   App/
     AcmeBankApp.swift        ← @main entry (implemented)
     ContentView.swift        ← placeholder screen (implemented)
+  Sources/
+    Auth/
+      OktaConfig.swift       ← runtime Okta config loader (implemented)
   Resources/
     Assets.xcassets/         ← AppIcon stub (implemented)
   AcmeBank.entitlements      ← keychain-access-groups stub (implemented)
   PrivacyInfo.xcprivacy      ← privacy manifest (implemented)
 AcmeBankTests/
   AcmeBankTests.swift        ← smoke test (implemented)
+  Auth/
+    OktaConfigTests.swift    ← sentinel / partial / malformed-URL paths (implemented)
 AcmeBankUITests/
   AcmeBankUITests.swift      ← launch smoke test (implemented)
 ```
@@ -121,6 +129,44 @@ AcmeBankUITests/
   *(deferred — future PR)*
 - **CI** — `ios-build.yml`; `xcodebuild test` on every PR; `-warnings-as-errors`;
   xcconfig injects `API_BASE_URL`. *(deferred — future PR)*
+
+### Auth layer & env-var contract (PR 1 of the Okta story)
+
+`AcmeBank/Sources/Auth/OktaConfig.swift` is the single source of truth
+for runtime Okta config. It reads four keys from
+`Bundle.main.infoDictionary` and returns either
+`.configured(issuer:, clientId:, redirectUri:, scopes:)` or
+`.notConfigured(reason:)`. The four keys are written into the BUILT
+Info.plist at build time by `Scripts/inject_okta_config.sh`
+(a `postBuildScript` on the `AcmeBank` target). The script reads these
+env vars from the calling process and falls back to a sentinel
+`__OKTA_<KEY>_UNSET__` when an env var is unset, so the build never
+hard-fails on a fresh clone:
+
+| Env var              | Info.plist key       | Sentinel                       |
+|----------------------|----------------------|--------------------------------|
+| `OKTA_ISSUER`        | `OKTA_ISSUER`        | `__OKTA_ISSUER_UNSET__`        |
+| `OKTA_CLIENT_ID`     | `OKTA_CLIENT_ID`     | `__OKTA_CLIENT_ID_UNSET__`     |
+| `OKTA_REDIRECT_URI`  | `OKTA_REDIRECT_URI`  | `__OKTA_REDIRECT_URI_UNSET__`  |
+| `OKTA_SCOPES`        | `OKTA_SCOPES`        | `__OKTA_SCOPES_UNSET__`        |
+
+Set the env vars via `launchctl setenv` (GUI Xcode), `export` in
+`~/.zshrc` + `xed .` (shell-launched Xcode), or inline on the
+`xcodebuild` command (CI). See README "Okta build configuration" for
+the full launch-pattern table.
+
+A `PhaseScriptExecution` runs in a SUBSHELL of the calling Xcode
+process — it inherits Xcode's environment, not your interactive
+shell's `~/.zshrc`. If `OktaConfig.load()` returns `.notConfigured`
+on a build you expected to be configured, your env vars are reaching
+your shell but not Xcode; pick the launch pattern matching how you
+opened Xcode.
+
+UI-test note: the UI-test runner is a separate process with its own
+`Bundle.main` (the test-runner bundle, NOT the app under test). UI
+tests must NOT call `OktaConfig.load()` — they will always see
+`.notConfigured`. Probe `ProcessInfo.processInfo.environment` directly
+to gate on build-time config.
 
 ### Keychain note for future feature agents
 Any query dictionary that touches `SecItem*` APIs **must** include

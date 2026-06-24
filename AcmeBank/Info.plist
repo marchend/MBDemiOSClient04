@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>AcmeBank</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>OKTA_ISSUER</key>
+	<string>__OKTA_ISSUER_UNSET__</string>
+	<key>OKTA_CLIENT_ID</key>
+	<string>__OKTA_CLIENT_ID_UNSET__</string>
+	<key>OKTA_REDIRECT_URI</key>
+	<string>__OKTA_REDIRECT_URI_UNSET__</string>
+	<key>OKTA_SCOPES</key>
+	<string>__OKTA_SCOPES_UNSET__</string>
+</dict>
+</plist>
