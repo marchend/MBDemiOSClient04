@@ -43,7 +43,10 @@ struct LoginView: View {
                             ErrorBannerView(message: errorMessage)
                         }
 
-                        SignInButtonView(viewModel: viewModel)
+                        SignInButtonView(
+                            isEnabled: viewModel.isSignInEnabled,
+                            action: viewModel.signIn
+                        )
                     }
 
                     Spacer(minLength: 16)

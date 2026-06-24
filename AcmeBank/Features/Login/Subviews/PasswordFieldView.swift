@@ -14,10 +14,14 @@ struct PasswordFieldView: View {
             HStack {
                 if isPasswordVisible {
                     TextField("Password", text: $password)
+                        .textContentType(.password)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .accessibilityLabel("Password")
                 } else {
                     SecureField("Password", text: $password)
+                        .textContentType(.password)
+                        .accessibilityLabel("Password")
                 }
 
                 Button {
@@ -27,6 +31,7 @@ struct PasswordFieldView: View {
                         .foregroundStyle(Color(.secondaryLabel))
                         .frame(width: 44, height: 44)
                 }
+                .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
             }
             .padding(.horizontal, 12)
             .frame(height: 50)

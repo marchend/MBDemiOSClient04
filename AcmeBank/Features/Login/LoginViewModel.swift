@@ -23,7 +23,7 @@ final class LoginViewModel: ObservableObject {
 
     /// Called when the user taps "Sign in" and both fields are non-empty.
     /// Receives `(username, password)`.
-    var onSignIn: (String, String) -> Void
+    let onSignIn: (String, String) -> Void
 
     // MARK: - Init
 

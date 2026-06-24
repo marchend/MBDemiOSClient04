@@ -2,11 +2,12 @@ import SwiftUI
 
 /// Full-width "Sign in" button styled in Acme Navy.
 struct SignInButtonView: View {
-    @ObservedObject var viewModel: LoginViewModel
+    let isEnabled: Bool
+    let action: () -> Void
 
     var body: some View {
         Button {
-            viewModel.signIn()
+            action()
         } label: {
             Text("Sign in")
                 .font(.headline)
@@ -15,21 +16,17 @@ struct SignInButtonView: View {
                 .frame(height: 52)
                 .background(Color.acmeNavy)
                 .cornerRadius(8)
-                .opacity(viewModel.isSignInEnabled ? 1.0 : 0.4)
+                .opacity(isEnabled ? 1.0 : 0.4)
         }
-        .disabled(!viewModel.isSignInEnabled)
+        .disabled(!isEnabled)
+        .accessibilityIdentifier("signInButton")
     }
 }
 
 #Preview {
     VStack(spacing: 16) {
-        SignInButtonView(viewModel: LoginViewModel(onSignIn: { _, _ in }))
-        SignInButtonView(viewModel: {
-            let vm = LoginViewModel(onSignIn: { _, _ in })
-            vm.username = "user@example.com"
-            vm.password = "secret"
-            return vm
-        }())
+        SignInButtonView(isEnabled: false, action: {})
+        SignInButtonView(isEnabled: true, action: {})
     }
     .padding()
 }

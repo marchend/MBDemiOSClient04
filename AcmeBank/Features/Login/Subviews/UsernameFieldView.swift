@@ -12,8 +12,10 @@ struct UsernameFieldView: View {
 
             TextField("name@acmebank.com", text: $username)
                 .keyboardType(.emailAddress)
+                .textContentType(.username)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .accessibilityLabel("Username")
                 .padding(.horizontal, 12)
                 .frame(height: 50)
                 .background(Color.fieldBackground)
