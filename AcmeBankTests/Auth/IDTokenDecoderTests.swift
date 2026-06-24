@@ -36,6 +36,24 @@ final class IDTokenDecoderTests: XCTestCase {
         XCTAssertNil(claims.auth_time)
     }
 
+    /// `name` and `email` are also optional (they require the
+    /// `profile` / `email` scopes and a populated user profile). A JWT
+    /// with neither must still decode successfully so a partial-scope
+    /// tenant config doesn't masquerade as a malformed-token error.
+    func test_decode_jwtWithoutNameOrEmail_succeedsWithNilFields() throws {
+        let payloadJSON = """
+        {"sub":"u"}
+        """
+        let jwt = Self.makeJWT(payloadJSON: payloadJSON)
+
+        let claims = try IDTokenDecoder.decode(jwt)
+
+        XCTAssertEqual(claims.sub, "u")
+        XCTAssertNil(claims.name)
+        XCTAssertNil(claims.email)
+        XCTAssertNil(claims.auth_time)
+    }
+
     // MARK: - Malformed inputs
 
     func test_decode_garbage_throwsMalformedToken() {
@@ -57,11 +75,12 @@ final class IDTokenDecoderTests: XCTestCase {
     }
 
     func test_decode_jwtWithMissingRequiredClaim_throwsMalformedToken() {
-        // Missing the `email` claim (required, non-optional in
-        // IDTokenClaims) — JSONDecoder fails and we map to
-        // .malformedToken.
+        // Missing `sub` — the ONLY claim required by OIDC Core and
+        // the only non-optional field in `IDTokenClaims`. JSONDecoder
+        // fails and we map to .malformedToken. (`name` / `email` are
+        // optional and covered by the success-case test above.)
         let payloadJSON = """
-        {"sub":"u","name":"n"}
+        {"name":"n","email":"e@e.com"}
         """
         let jwt = Self.makeJWT(payloadJSON: payloadJSON)
 

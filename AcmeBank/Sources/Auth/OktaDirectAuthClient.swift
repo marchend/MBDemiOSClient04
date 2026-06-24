@@ -1,17 +1,26 @@
 import Foundation
 import OktaDirectAuth
+import os.log
 
 /// Token bundle returned by a successful Direct-Auth sign-in or
 /// refresh. SDK-agnostic by design: the protocol seam returns this
 /// type, NOT the SDK's `Token`, so the test target never has to
 /// import `OktaDirectAuth`. (See prior lesson "Put the IdP SDK behind
 /// a NEUTRAL protocol seam".)
+///
+/// `idToken` is optional because some Direct-Auth flows (token
+/// exchange, client-credentials) legitimately omit it. Callers in
+/// later PRs (`AuthService`) decide whether absence is a hard failure
+/// for their flow — surfacing it as `nil` here means they can fail
+/// with a typed, specific error rather than handing an empty string
+/// to `IDTokenDecoder.decode` and getting a misleading
+/// `.malformedToken` back.
 public struct AuthTokens: Equatable {
-    public let idToken: String
+    public let idToken: String?
     public let accessToken: String
     public let refreshToken: String?
 
-    public init(idToken: String, accessToken: String, refreshToken: String?) {
+    public init(idToken: String?, accessToken: String, refreshToken: String?) {
         self.idToken = idToken
         self.accessToken = accessToken
         self.refreshToken = refreshToken
@@ -42,12 +51,15 @@ public protocol OktaAuthenticating {
 ///   - `.mfaRequired` (any payload)    -> `.mfaRequired`
 ///   - `.continuation` (any payload)   -> `.mfaRequired`
 ///   - thrown SDK errors               -> `.network`
+///   - unrecognised future SDK status  -> `.network` + os_log warning
 ///
 /// This file is the ONLY one in the Auth layer that imports
 /// `OktaDirectAuth`, so an SDK major-version bump only needs to touch
 /// here (status case names, `.password(...)` factor spelling) without
 /// touching tests or `AuthService`.
 public final class OktaDirectAuthClient: OktaAuthenticating {
+    private static let log = OSLog(subsystem: "com.acmebank.auth", category: "OktaDirectAuthClient")
+
     private let config: OktaConfig
 
     public init(config: OktaConfig) {
@@ -105,8 +117,13 @@ public final class OktaDirectAuthClient: OktaAuthenticating {
     private func map(_ status: DirectAuthenticationFlow.Status) throws -> AuthTokens {
         switch status {
         case .success(let token):
+            // Pass the SDK's optional through unchanged — see the
+            // `AuthTokens.idToken` doc comment. The previous
+            // `?? ""` fallback turned "IdP returned no ID token"
+            // into a downstream `.malformedToken` with no
+            // diagnostic value.
             return AuthTokens(
-                idToken: token.idToken?.rawValue ?? "",
+                idToken: token.idToken?.rawValue,
                 accessToken: token.accessToken,
                 refreshToken: token.refreshToken
             )
@@ -120,7 +137,19 @@ public final class OktaDirectAuthClient: OktaAuthenticating {
             // "invalid credentials".
             throw AuthError.mfaRequired
         @unknown default:
-            throw AuthError.invalidCredentials
+            // A future SDK shipped a `Status` case we don't recognise.
+            // This is NOT a credential failure — surfacing it as
+            // `.invalidCredentials` would falsely accuse the user of
+            // typing the wrong password. Map to `.network` (our
+            // "I don't know what happened" bucket) and log so a future
+            // SDK version bump doesn't silently mislead users in
+            // production without any trace.
+            os_log(
+                "OktaDirectAuthClient: unrecognised DirectAuthenticationFlow.Status case — SDK upgrade likely. Surfacing as AuthError.network.",
+                log: Self.log,
+                type: .error
+            )
+            throw AuthError.network
         }
     }
 }
