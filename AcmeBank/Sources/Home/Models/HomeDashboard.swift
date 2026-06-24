@@ -22,25 +22,37 @@ public struct HomeDashboard: Equatable, Codable {
 ///
 /// The BFF sends `first_name` + `last_name` separately (it does not
 /// send a pre-combined display name), so `displayName` is derived here.
+///
+/// The optional `segment` field (`"segment"` in JSON) identifies the
+/// customer tier (e.g. `"PREMIER"`, `"STANDARD"`). It is omitted from
+/// the BFF response for customers with no assigned segment, so the
+/// field is `Optional<CustomerSegment>`. `.convertFromSnakeCase` maps
+/// the JSON key `"segment"` directly to `segment` (no custom
+/// `CodingKeys` required). Unknown tier strings fall back to
+/// `CustomerSegment.unknown` via a custom `init(from:)`, preserving
+/// forward-compatibility as the BFF adds new tiers.
 public struct Customer: Equatable, Codable {
     public let id: String
     public let firstName: String       // first_name
     public let lastName: String        // last_name
     public let email: String
     public let phoneNumber: String?    // phone_number (nullable)
+    public let segment: CustomerSegment?  // customer tier, e.g. .premier (nullable)
 
     public init(
         id: String,
         firstName: String,
         lastName: String,
         email: String,
-        phoneNumber: String? = nil
+        phoneNumber: String? = nil,
+        segment: CustomerSegment? = nil
     ) {
         self.id = id
         self.firstName = firstName
         self.lastName = lastName
         self.email = email
         self.phoneNumber = phoneNumber
+        self.segment = segment
     }
 
     /// Full name for display, derived from `firstName` + `lastName`.
@@ -49,6 +61,41 @@ public struct Customer: Equatable, Codable {
         let full = "\(firstName) \(lastName)"
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return full.isEmpty ? email : full
+    }
+}
+
+/// Customer segment / tier as returned by the BFF (`segment` field).
+///
+/// `RawRepresentable` with a `String` raw value so JSON strings map
+/// directly. The failable `init(from:)` falls back to `.unknown` for
+/// unrecognised server values — forward-compatible as the BFF adds new
+/// segment tiers. Raw values use the BFF's uppercase convention.
+///
+/// Only `.premier` and `.standard` have a visible badge; `.unknown`
+/// is intentionally hidden so unvetted future values don't render
+/// blank or nonsensical text on the card.
+public enum CustomerSegment: String, Equatable, Codable {
+    case premier  = "PREMIER"
+    case standard = "STANDARD"
+    case unknown
+
+    /// Failable init that falls back to `.unknown` for unrecognised
+    /// raw values rather than failing the entire Codable decode.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        self = CustomerSegment(rawValue: raw) ?? .unknown
+    }
+
+    /// Human-readable display string for badge rendering.
+    /// Returns `nil` for `.unknown` so callers can choose not to
+    /// render a badge for unrecognised or empty segment values.
+    public var badgeText: String? {
+        switch self {
+        case .premier:  return "PREMIER"
+        case .standard: return "STANDARD"
+        case .unknown:  return nil
+        }
     }
 }
 

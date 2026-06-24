@@ -6,7 +6,7 @@ import SwiftUI
 /// Layout (top to bottom, all on navy background):
 /// - "SIGNED IN" label (small caps, light grey)
 /// - Circular avatar with the customer's initials
-/// - Full display name (bold white)
+/// - Full display name (bold white) + optional segment badge
 /// - Auth row: shield SF Symbol + "Authenticated via Okta · ···XXXX"
 ///
 /// The `customerId` (Okta `sub` claim) is never rendered verbatim.
@@ -15,10 +15,25 @@ import SwiftUI
 /// PII-adjacent values that some IdP configurations embed in `sub`.
 ///
 /// Zero green/red: the palette is strictly navy / white / grey.
+/// The segment badge (if present) uses a semi-transparent white
+/// background so no accent colour is introduced.
 struct SignedInCardView: View {
 
     let displayName: String
     let customerId: String
+    /// Optional customer segment. When non-nil and a known tier,
+    /// a `SegmentBadgeView` is rendered to the right of the display name.
+    /// `.unknown` segments are treated as absent so unvetted future
+    /// values never produce a blank or nonsensical badge.
+    let segment: CustomerSegment?
+
+    // MARK: - Init
+
+    init(displayName: String, customerId: String, segment: CustomerSegment? = nil) {
+        self.displayName = displayName
+        self.customerId = customerId
+        self.segment = segment
+    }
 
     // MARK: - Body
 
@@ -37,10 +52,17 @@ struct SignedInCardView: View {
                     .frame(width: 52, height: 52)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(displayName)
-                        .font(.headline)
-                        .bold()
-                        .foregroundColor(.white)
+                    // Name + optional segment badge on the same row
+                    HStack(alignment: .center) {
+                        Text(displayName)
+                            .font(.headline)
+                            .bold()
+                            .foregroundColor(.white)
+                        Spacer()
+                        if let badgeText = segment?.badgeText {
+                            SegmentBadgeView(segment: badgeText)
+                        }
+                    }
                 }
             }
 
@@ -94,10 +116,23 @@ struct SignedInCardView: View {
     }
 }
 
-#Preview {
+// MARK: - Previews
+
+#Preview("With PREMIER segment badge") {
     SignedInCardView(
         displayName: "Ada Lovelace",
-        customerId: "user-123"
+        customerId: "user-123",
+        segment: .premier
+    )
+    .padding()
+    .background(Color(.systemGroupedBackground))
+}
+
+#Preview("Without segment (nil)") {
+    SignedInCardView(
+        displayName: "Ada Lovelace",
+        customerId: "user-123",
+        segment: nil
     )
     .padding()
     .background(Color(.systemGroupedBackground))
