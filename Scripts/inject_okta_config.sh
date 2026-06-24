@@ -73,6 +73,30 @@ inject_key() {
     fi
 }
 
+# Config fallback: when the build process didn't INHERIT the OKTA_* /
+# API_BASE_URL env (the common case — Xcode launched before `launchctl
+# setenv`, so its build-script subshell has a stale environment), read the
+# values from a gitignored `okta.local.env` written by setup.sh. This makes
+# the "press Run in Xcode" flow deterministic instead of depending on how/when
+# Xcode was launched. The shell env still WINS (only blanks are filled), so an
+# explicit `export` / command-line build keeps overriding the file.
+LOCAL_ENV="${SRCROOT}/okta.local.env"
+if [[ -f "${LOCAL_ENV}" ]]; then
+    while IFS= read -r line; do
+        [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+        k="${line%%=*}"
+        case "${k}" in
+            OKTA_ISSUER|OKTA_CLIENT_ID|OKTA_REDIRECT_URI|OKTA_SCOPES|API_BASE_URL) ;;
+            *) continue ;;
+        esac
+        if [[ -z "${!k:-}" ]]; then
+            v="${line#*=}"; v="${v%\'}"; v="${v#\'}"; v="${v%\"}"; v="${v#\"}"
+            export "${k}=${v}"
+        fi
+    done < "${LOCAL_ENV}"
+    echo "inject_okta_config.sh: loaded fallback config from ${LOCAL_ENV}"
+fi
+
 inject_key "OKTA_ISSUER"       "${OKTA_ISSUER:-}"
 inject_key "OKTA_CLIENT_ID"    "${OKTA_CLIENT_ID:-}"
 inject_key "OKTA_REDIRECT_URI" "${OKTA_REDIRECT_URI:-}"
