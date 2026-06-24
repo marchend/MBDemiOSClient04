@@ -135,6 +135,13 @@ public struct Account: Equatable, Codable {
 /// unrecognised server values — forward-compatible as the BFF adds new
 /// account types. Note the raw value is `chequing` (CA spelling), to
 /// match the BFF enum `[chequing, savings, credit, investment]`.
+///
+/// Decoding is **case-insensitive**: the wire value is lowercased before
+/// matching, so both `"chequing"` and `"CHEQUING"` resolve to
+/// `.chequing`. The mock backend / BFF emit UPPERCASE type strings
+/// (`CHEQUING | SAVINGS | CREDIT | INVESTMENT`); without normalisation
+/// every row would fall back to `.unknown` and render the generic
+/// dollar-sign icon instead of the per-type icon.
 public enum AccountType: String, Equatable, Codable {
     case chequing
     case savings
@@ -142,12 +149,28 @@ public enum AccountType: String, Equatable, Codable {
     case investment
     case unknown
 
-    /// Failable init that falls back to `.unknown` for unrecognised
-    /// raw values rather than failing the entire Codable decode.
+    /// Failable init that lowercases the wire value before matching and
+    /// falls back to `.unknown` for unrecognised raw values rather than
+    /// failing the entire Codable decode. The lowercasing makes the
+    /// decode survive the BFF's UPPERCASE convention.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let raw = try container.decode(String.self)
-        self = AccountType(rawValue: raw) ?? .unknown
+        self = AccountType(rawValue: raw.lowercased()) ?? .unknown
+    }
+
+    /// Title-cased, human-readable label for the account type, used in
+    /// the Account row subtitle. `.credit` reads "Credit Card" and
+    /// `.unknown` reads "Account" (a neutral fallback) per the Home
+    /// story.
+    public var displayName: String {
+        switch self {
+        case .chequing:   return "Chequing"
+        case .savings:    return "Savings"
+        case .credit:     return "Credit Card"
+        case .investment: return "Investment"
+        case .unknown:    return "Account"
+        }
     }
 }
 

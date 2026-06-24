@@ -4,7 +4,9 @@ import SwiftUI
 ///
 /// Layout:
 /// - Left: dark rounded-square icon tile (SF Symbol on navy tile)
-/// - Middle: account name + masked number (subtitle)
+/// - Middle: account name + a subtitle reading
+///   `"<Title-cased Type> · ···· <maskedNumber>"`
+///   (e.g. "Chequing · ···· 4287")
 /// - Right: balance formatted via `Decimal.formatted(currencyCode:)`
 ///   with `\u{2212}` prefix for negatives; negative rows additionally
 ///   show `"<available> available"` subtext.
@@ -25,7 +27,7 @@ struct AccountRowView: View {
                 Text(account.name)
                     .font(.body)
                     .foregroundColor(.primary)
-                Text("\u{00B7}\u{00B7}\u{00B7}\u{00B7} \(account.maskedNumber)")
+                Text("\(account.type.displayName) \u{00B7} \u{00B7}\u{00B7}\u{00B7}\u{00B7} \(account.maskedNumber)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

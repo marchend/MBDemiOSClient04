@@ -78,6 +78,40 @@ final class HomeDashboardDecodingTests: XCTestCase {
         XCTAssertEqual(tx.postedDate, ISO8601DateFormatter().date(from: "2026-06-07T13:11:00Z"))
     }
 
+    /// The BFF emits UPPERCASE account-type strings (`CHEQUING`, …).
+    /// Account-type decode is case-insensitive, so both the lowercase
+    /// spelling and the wire UPPERCASE spelling resolve to the same case
+    /// (and never silently fall back to `.unknown`, which would render
+    /// the generic icon for every row).
+    func testAccountTypeDecodeIsCaseInsensitive() throws {
+        let json = Data("""
+        {
+          "customer": { "id": "c", "first_name": "A", "last_name": "B", "email": "a@b.com" },
+          "accounts": [
+            { "id": "a1", "name": "Lower", "masked_number": "1111", "balance": 0, "available_balance": 0, "type": "chequing", "currency_code": "USD" },
+            { "id": "a2", "name": "Upper", "masked_number": "2222", "balance": 0, "available_balance": 0, "type": "CHEQUING", "currency_code": "USD" },
+            { "id": "a3", "name": "UpperCredit", "masked_number": "3333", "balance": 0, "available_balance": 0, "type": "CREDIT", "currency_code": "USD" }
+          ],
+          "recent_transactions": []
+        }
+        """.utf8)
+        let home = try makeDecoder().decode(HomeDashboard.self, from: json)
+        XCTAssertEqual(home.accounts[0].type, .chequing)   // "chequing"
+        XCTAssertEqual(home.accounts[1].type, .chequing)   // "CHEQUING"
+        XCTAssertEqual(home.accounts[2].type, .credit)     // "CREDIT"
+    }
+
+    /// `AccountType.displayName` is the title-cased label used in the
+    /// Account row subtitle; `.credit` reads "Credit Card" and `.unknown`
+    /// reads "Account".
+    func testAccountTypeDisplayNames() {
+        XCTAssertEqual(AccountType.chequing.displayName, "Chequing")
+        XCTAssertEqual(AccountType.savings.displayName, "Savings")
+        XCTAssertEqual(AccountType.credit.displayName, "Credit Card")
+        XCTAssertEqual(AccountType.investment.displayName, "Investment")
+        XCTAssertEqual(AccountType.unknown.displayName, "Account")
+    }
+
     /// Unknown account types fall back to `.unknown` rather than failing
     /// the whole decode (forward-compatibility as the BFF adds types).
     func testUnknownAccountTypeFallsBackToUnknown() throws {
